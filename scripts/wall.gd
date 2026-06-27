@@ -1,4 +1,5 @@
 extends Node3D
+class_name BrickWall
 
 ## The brick wall surface. Owns the visible quad and provides the geometry
 ## helpers the painting system needs: world<->UV mapping and ray/plane hits.
@@ -10,6 +11,7 @@ extends Node3D
 ## Path to the brick albedo. Loaded at runtime so the scene never depends on
 ## Godot's import order / generated UIDs.
 const BRICK_TEXTURE_PATH := "res://assets/brick_wall.jpg"
+const WALL_SHADER_PATH := "res://shaders/wall_paint.gdshader"
 
 ## Default paint-layer resolution (16:9 to match the quad). Later phases read
 ## this when allocating the paint Image.
@@ -17,6 +19,7 @@ const BRICK_TEXTURE_PATH := "res://assets/brick_wall.jpg"
 
 var _mesh: MeshInstance3D
 var _quad_size: Vector2 = Vector2.ONE
+var _paint: PaintLayer
 
 
 func _ready() -> void:
@@ -25,14 +28,26 @@ func _ready() -> void:
 	if qm != null:
 		_quad_size = qm.size
 
-	# Apply the brick texture at runtime onto the quad's material.
-	var tex := load(BRICK_TEXTURE_PATH)
-	if tex != null:
-		var mat := _mesh.material_override
-		if mat is StandardMaterial3D:
-			(mat as StandardMaterial3D).albedo_texture = tex
-	else:
+	# Create the paint accumulation layer.
+	_paint = PaintLayer.new()
+	_paint.name = "PaintLayer"
+	add_child(_paint)
+	_paint.setup(paint_resolution)
+
+	# Composite brick + paint via the wall shader.
+	var brick_tex := load(BRICK_TEXTURE_PATH)
+	if brick_tex == null:
 		push_warning("Brick texture not found at %s — open the project in the editor once so it imports." % BRICK_TEXTURE_PATH)
+	var mat := ShaderMaterial.new()
+	mat.shader = load(WALL_SHADER_PATH)
+	mat.set_shader_parameter("brick_tex", brick_tex)
+	mat.set_shader_parameter("paint_tex", _paint.texture)
+	_mesh.material_override = mat
+
+
+## The paint accumulation layer for this wall.
+func get_paint_layer() -> PaintLayer:
+	return _paint
 
 
 ## World-space size (width, height) of the wall face, in metres.
