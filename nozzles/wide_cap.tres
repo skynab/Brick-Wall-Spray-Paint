@@ -4,7 +4,10 @@
 
 [resource]
 script = ExtResource("1_nozzle")
-nozzle_name = "Wide Cap"
+nozzle_name = "Fat Cap"
+shape = 0
+aspect = 1.0
+angle = 0.0
 radius_px = 110.0
 flow = 18
 scatter = 0.9

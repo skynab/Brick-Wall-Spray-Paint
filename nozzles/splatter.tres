@@ -5,6 +5,9 @@
 [resource]
 script = ExtResource("1_nozzle")
 nozzle_name = "Splatter"
+shape = 4
+aspect = 1.0
+angle = 0.0
 radius_px = 90.0
 flow = 6
 scatter = 1.0

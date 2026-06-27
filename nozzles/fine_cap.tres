@@ -5,6 +5,9 @@
 [resource]
 script = ExtResource("1_nozzle")
 nozzle_name = "Fine Cap"
+shape = 0
+aspect = 1.0
+angle = 0.0
 radius_px = 28.0
 flow = 10
 scatter = 0.35

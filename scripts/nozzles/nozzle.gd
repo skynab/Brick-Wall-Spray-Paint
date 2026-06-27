@@ -3,8 +3,24 @@ class_name Nozzle
 
 ## Tunable parameters for one spray cap. Presets live in res://nozzles/*.tres.
 
+## The geometric footprint of the spray cone. Drives how droplets are scattered
+## around the aim point (see SprayTool._sample_offset).
+##   ROUND    — even disc (classic cap).
+##   OVAL     — disc stretched by `aspect` (fat/thin fan caps).
+##   LINE     — narrow calligraphy stroke along the `angle` axis.
+##   SQUARE   — uniform square footprint (stencil / hard cap edge).
+##   SPLATTER — sparse jittered specks with size variation.
+enum Shape { ROUND, OVAL, LINE, SQUARE, SPLATTER }
+
 ## Display name shown in the HUD / menu.
 @export var nozzle_name: String = "Nozzle"
+## Footprint geometry of the spray cone.
+@export var shape: Shape = Shape.ROUND
+## Width-to-height stretch of the footprint. 1 = symmetric; >1 widens along the
+## local X axis (used by OVAL and LINE). Ignored by ROUND.
+@export_range(1.0, 8.0, 0.1) var aspect: float = 1.0
+## Rotation of the footprint in degrees. Orients OVAL/LINE/SQUARE patterns.
+@export_range(-180.0, 180.0, 1.0) var angle: float = 0.0
 ## Overall spray-cone radius in paint pixels (max droplet distance from aim).
 @export var radius_px: float = 60.0
 ## Droplets emitted per frame while the spray is held.

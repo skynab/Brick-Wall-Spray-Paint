@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="Nozzle" load_steps=2 format=3 uid="uid://cnozstencilcap01"]
+
+[ext_resource type="Script" path="res://scripts/nozzles/nozzle.gd" id="1_nozzle"]
+
+[resource]
+script = ExtResource("1_nozzle")
+nozzle_name = "Stencil Cap"
+shape = 3
+aspect = 1.0
+angle = 0.0
+radius_px = 70.0
+flow = 16
+scatter = 0.85
+droplet_size_px = 10.0
+softness = 0.25
+build_rate = 0.1
+drip_chance = 0.0
