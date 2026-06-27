@@ -22,16 +22,23 @@ signal proximity_threshold_changed(value: float)
 
 const PANEL_WIDTH := 320.0
 const SLIDE_TIME := 0.22
+const PREFS_PATH := "user://ui_prefs.cfg"
 
-# (property on Nozzle, label, min, max, step, is_int)
+## Shape dropdown items, in Nozzle.Shape enum order.
+const SHAPE_NAMES := ["Round", "Oval", "Line", "Square", "Splatter"]
+
+# (property on Nozzle, label, min, max, step, is_int, is_advanced)
+# Only Radius is shown in the Simple view; the rest live under Advanced.
 const SLIDER_SPECS := [
-	["radius_px", "Radius", 4.0, 250.0, 1.0, false],
-	["flow", "Flow", 1.0, 40.0, 1.0, true],
-	["scatter", "Scatter", 0.0, 1.0, 0.01, false],
-	["droplet_size_px", "Droplet size", 1.0, 40.0, 1.0, false],
-	["softness", "Softness", 0.0, 1.0, 0.01, false],
-	["build_rate", "Build rate", 0.0, 1.0, 0.01, false],
-	["drip_chance", "Drip", 0.0, 1.0, 0.01, false],
+	["radius_px", "Radius", 4.0, 250.0, 1.0, false, false],
+	["flow", "Flow", 1.0, 40.0, 1.0, true, true],
+	["scatter", "Scatter", 0.0, 1.0, 0.01, false, true],
+	["droplet_size_px", "Droplet size", 1.0, 40.0, 1.0, false, true],
+	["softness", "Softness", 0.0, 1.0, 0.01, false, true],
+	["build_rate", "Build rate", 0.0, 1.0, 0.01, false, true],
+	["drip_chance", "Drip", 0.0, 1.0, 0.01, false, true],
+	["aspect", "Aspect", 1.0, 8.0, 0.1, false, true],
+	["angle", "Angle", -180.0, 180.0, 1.0, true, true],
 ]
 
 var _spray: SprayTool
@@ -39,18 +46,26 @@ var _spray: SprayTool
 var _panel: PanelContainer
 var _color_btn: ColorPickerButton
 var _nozzle_opt: OptionButton
+var _shape_opt: OptionButton
 var _aim_opt: OptionButton
 var _prox_value: Label
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
 var _slider_labels: Dictionary = {} # key -> Label
 
+## Nodes revealed only in the Advanced view.
+var _advanced_nodes: Array[Control] = []
+var _advanced := false
+var _advanced_check: CheckButton
+
 var _shown := true
 var _tween: Tween
 
 
 func _ready() -> void:
+	_load_prefs()
 	_build_ui()
+	_apply_advanced_visibility()
 	get_viewport().size_changed.connect(_reposition)
 	_reposition()
 
@@ -69,6 +84,8 @@ func sync_from_tool() -> void:
 		return
 	_nozzle_opt.select(_spray.nozzle_index)
 	_color_btn.color = _spray.current_color()
+	if _shape_opt != null:
+		_shape_opt.select(int(_spray.current_nozzle().shape))
 	_sync_sliders()
 
 
@@ -127,15 +144,95 @@ func _build_ui() -> void:
 	vbox.add_theme_constant_override("separation", 8)
 	margin.add_child(vbox)
 
-	vbox.add_child(_make_title("SPRAY CONTROLS"))
+	# Title row: heading + Simple/Advanced toggle.
+	var title_row := HBoxContainer.new()
+	var title := _make_title("SPRAY CONTROLS")
+	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	title_row.add_child(title)
+	_advanced_check = CheckButton.new()
+	_advanced_check.text = "Advanced"
+	_advanced_check.button_pressed = _advanced
+	_advanced_check.toggled.connect(_on_advanced_toggled)
+	title_row.add_child(_advanced_check)
+	vbox.add_child(title_row)
 
-	# Aim source section
-	vbox.add_child(_make_label("Aim source"))
+	# Color section (Simple)
+	vbox.add_child(_make_label("Color"))
+	_color_btn = ColorPickerButton.new()
+	_color_btn.custom_minimum_size = Vector2(0, 32)
+	_color_btn.color_changed.connect(_on_color_changed)
+	vbox.add_child(_color_btn)
+	vbox.add_child(_make_palette_row())
+
+	vbox.add_child(HSeparator.new())
+
+	# Nozzle section (Simple): preset + shape + radius.
+	vbox.add_child(_make_label("Nozzle"))
+	_nozzle_opt = OptionButton.new()
+	_nozzle_opt.item_selected.connect(_on_nozzle_selected)
+	vbox.add_child(_nozzle_opt)
+
+	var shape_row := HBoxContainer.new()
+	var shape_label := Label.new()
+	shape_label.text = "Shape"
+	shape_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	shape_row.add_child(shape_label)
+	_shape_opt = OptionButton.new()
+	for s in SHAPE_NAMES:
+		_shape_opt.add_item(s)
+	_shape_opt.item_selected.connect(_on_shape_selected)
+	shape_row.add_child(_shape_opt)
+	vbox.add_child(shape_row)
+
+	for spec in SLIDER_SPECS:
+		var row := _make_slider_row(spec)
+		vbox.add_child(row)
+		if bool(spec[6]):
+			_advanced_nodes.append(row)
+
+	# Reset (Advanced): undo live slider edits.
+	var reset_btn := _make_action_button("Reset nozzle", _on_reset_pressed)
+	vbox.add_child(reset_btn)
+	_advanced_nodes.append(reset_btn)
+
+	# Aim source + tracker section (Advanced).
+	var tracker_box := _build_tracker_section()
+	vbox.add_child(tracker_box)
+	_advanced_nodes.append(tracker_box)
+
+	vbox.add_child(HSeparator.new())
+
+	# Action buttons (Simple)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 6)
+	actions.add_child(_make_action_button("Clear", func(): clear_requested.emit()))
+	actions.add_child(_make_action_button("Undo", func(): undo_requested.emit()))
+	actions.add_child(_make_action_button("Save", func(): save_requested.emit()))
+	vbox.add_child(actions)
+
+	vbox.add_child(HSeparator.new())
+
+	# Status (OptiTrack state goes here later)
+	_status = _make_label("Tracker: —")
+	vbox.add_child(_status)
+
+	var hint := _make_label("[M] hide  [Tab] nozzle  [C]/1-6 color")
+	hint.add_theme_font_size_override("font_size", 11)
+	hint.modulate = Color(1, 1, 1, 0.5)
+	vbox.add_child(hint)
+
+
+## Build the aim-source / OptiTrack block as one collapsible container.
+func _build_tracker_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 8)
+
+	box.add_child(HSeparator.new())
+	box.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()
 	_aim_opt.item_selected.connect(_on_aim_selected)
-	vbox.add_child(_aim_opt)
+	box.add_child(_aim_opt)
 
-	# Tracker (OptiTrack) controls
 	var id_row := HBoxContainer.new()
 	var id_label := Label.new()
 	id_label.text = "Rigid Body ID"
@@ -148,17 +245,17 @@ func _build_ui() -> void:
 	spin.value = 1
 	spin.value_changed.connect(func(v): aim_asset_id_changed.emit(int(v)))
 	id_row.add_child(spin)
-	vbox.add_child(id_row)
+	box.add_child(id_row)
 
 	var calib_btn := Button.new()
 	calib_btn.text = "Calibrate wall (3 corners)"
 	calib_btn.pressed.connect(func(): calibrate_requested.emit())
-	vbox.add_child(calib_btn)
+	box.add_child(calib_btn)
 
 	var prox_check := CheckBox.new()
 	prox_check.text = "Auto-spray near wall"
 	prox_check.toggled.connect(func(on): proximity_toggled.emit(on))
-	vbox.add_child(prox_check)
+	box.add_child(prox_check)
 
 	var prox_box := VBoxContainer.new()
 	var prox_header := HBoxContainer.new()
@@ -178,49 +275,9 @@ func _build_ui() -> void:
 	prox_slider.value = 0.05
 	prox_slider.value_changed.connect(_on_prox_slider_changed)
 	prox_box.add_child(prox_slider)
-	vbox.add_child(prox_box)
+	box.add_child(prox_box)
 
-	vbox.add_child(HSeparator.new())
-
-	# Color section
-	vbox.add_child(_make_label("Color"))
-	_color_btn = ColorPickerButton.new()
-	_color_btn.custom_minimum_size = Vector2(0, 32)
-	_color_btn.color_changed.connect(_on_color_changed)
-	vbox.add_child(_color_btn)
-	vbox.add_child(_make_palette_row())
-
-	vbox.add_child(HSeparator.new())
-
-	# Nozzle section
-	vbox.add_child(_make_label("Nozzle"))
-	_nozzle_opt = OptionButton.new()
-	_nozzle_opt.item_selected.connect(_on_nozzle_selected)
-	vbox.add_child(_nozzle_opt)
-
-	for spec in SLIDER_SPECS:
-		vbox.add_child(_make_slider_row(spec))
-
-	vbox.add_child(HSeparator.new())
-
-	# Action buttons
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 6)
-	actions.add_child(_make_action_button("Clear", func(): clear_requested.emit()))
-	actions.add_child(_make_action_button("Undo", func(): undo_requested.emit()))
-	actions.add_child(_make_action_button("Save", func(): save_requested.emit()))
-	vbox.add_child(actions)
-
-	vbox.add_child(HSeparator.new())
-
-	# Status (OptiTrack state goes here later)
-	_status = _make_label("Tracker: —")
-	vbox.add_child(_status)
-
-	var hint := _make_label("[M] hide  [Tab] nozzle  [C]/1-6 color")
-	hint.add_theme_font_size_override("font_size", 11)
-	hint.modulate = Color(1, 1, 1, 0.5)
-	vbox.add_child(hint)
+	return box
 
 
 func _make_title(text: String) -> Label:
@@ -344,8 +401,31 @@ func _on_nozzle_selected(idx: int) -> void:
 	if _spray == null:
 		return
 	_spray.nozzle_index = idx
+	if _shape_opt != null:
+		_shape_opt.select(int(_spray.current_nozzle().shape))
 	_sync_sliders()
 	tool_changed.emit()
+
+
+func _on_shape_selected(idx: int) -> void:
+	if _spray == null:
+		return
+	_spray.current_nozzle().shape = idx
+	tool_changed.emit()
+
+
+func _on_reset_pressed() -> void:
+	if _spray == null:
+		return
+	_spray.reset_current_nozzle()
+	sync_from_tool()
+	tool_changed.emit()
+
+
+func _on_advanced_toggled(on: bool) -> void:
+	_advanced = on
+	_apply_advanced_visibility()
+	_save_prefs()
 
 
 func _on_aim_selected(idx: int) -> void:
@@ -367,6 +447,27 @@ func _on_slider_changed(value: float, key: String, is_int: bool, value_label: La
 	else:
 		noz.set(key, value)
 	value_label.text = str(int(round(value))) if is_int else "%.2f" % value
+
+
+# --- Advanced view + prefs --------------------------------------------------
+
+func _apply_advanced_visibility() -> void:
+	for node in _advanced_nodes:
+		if node != null:
+			node.visible = _advanced
+
+
+func _load_prefs() -> void:
+	var cfg := ConfigFile.new()
+	if cfg.load(PREFS_PATH) == OK:
+		_advanced = bool(cfg.get_value("menu", "advanced", false))
+
+
+func _save_prefs() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(PREFS_PATH)  # keep any other keys
+	cfg.set_value("menu", "advanced", _advanced)
+	cfg.save(PREFS_PATH)
 
 
 # --- Layout / sliding -------------------------------------------------------

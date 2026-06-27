@@ -14,6 +14,8 @@ const NOZZLE_PATHS := [
 ]
 
 var nozzles: Array[Nozzle] = []
+## Disk path each loaded nozzle came from, parallel to `nozzles` (for reset).
+var nozzle_paths: Array[String] = []
 var nozzle_index: int = 0
 
 var palette: Array[Color] = [
@@ -39,8 +41,10 @@ func _init() -> void:
 		var n = load(p)
 		if n is Nozzle:
 			nozzles.append(n)
+			nozzle_paths.append(p)
 	if nozzles.is_empty():
 		nozzles.append(Nozzle.new()) # safety fallback
+		nozzle_paths.append("")
 	active_color = palette[color_index]
 
 
@@ -70,6 +74,17 @@ func set_color_index(i: int) -> void:
 ## Set an arbitrary active color (from the color picker).
 func set_color(c: Color) -> void:
 	active_color = c
+
+
+## Reload the active nozzle from disk, discarding any live slider edits made to
+## the cached resource. Returns the fresh nozzle (or the current one on failure).
+func reset_current_nozzle() -> Nozzle:
+	var path := nozzle_paths[nozzle_index] if nozzle_index < nozzle_paths.size() else ""
+	if path != "":
+		var fresh = ResourceLoader.load(path, "", ResourceLoader.CACHE_MODE_IGNORE)
+		if fresh is Nozzle:
+			nozzles[nozzle_index] = fresh
+	return nozzles[nozzle_index]
 
 
 ## Emit one frame's worth of droplets around `center_uv` into the paint layer.
