@@ -26,6 +26,10 @@ var color_index: int = 0
 ## set to an arbitrary color from the menu's color picker.
 var active_color: Color = Color.WHITE
 
+# Dwell tracking for heavy-buildup drips.
+var _last_center: Vector2 = Vector2.ZERO
+var _dwell: int = 0
+
 
 func _init() -> void:
 	for p in NOZZLE_PATHS:
@@ -75,7 +79,27 @@ func spray(paint_layer: PaintLayer, center_uv: Vector2) -> void:
 
 	for i in noz.flow:
 		var ang := randf() * TAU
-		var rad := sqrt(randf()) * spread # sqrt -> uniform area distribution
+		var norm := sqrt(randf()) # 0 at center, 1 at rim (uniform area)
+		var rad := norm * spread
 		var p := center + Vector2(cos(ang), sin(ang)) * rad
 		var uv := Vector2(p.x / float(res.x - 1), p.y / float(res.y - 1))
-		paint_layer.stamp(uv, col, noz.droplet_size_px, noz.build_rate, noz.softness)
+		# Feather the cone: droplets near the rim deposit less paint.
+		var edge := 1.0 - smoothstep(AppConfig.SPRAY_EDGE_START, 1.0, norm)
+		paint_layer.stamp(uv, col, noz.droplet_size_px, noz.build_rate * edge, noz.softness)
+		# Per-droplet random drip (driven by the menu's Drip slider).
+		if noz.drip_chance > 0.0 and randf() < noz.drip_chance:
+			paint_layer.seed_drip(uv, col, AppConfig.DRIP_WIDTH, randf_range(AppConfig.DRIP_MIN_LEN, AppConfig.DRIP_MAX_LEN))
+
+	_update_dwell_drips(paint_layer, center, center_uv, col, noz)
+
+
+## Seed a drip when the spray lingers over one spot (heavy build-up).
+func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, center_uv: Vector2, col: Color, noz: Nozzle) -> void:
+	if center.distance_to(_last_center) < noz.radius_px * 0.5:
+		_dwell += 1
+	else:
+		_dwell = 0
+	_last_center = center
+	if _dwell >= AppConfig.DRIP_DWELL_FRAMES and randf() < AppConfig.DRIP_DWELL_SEED_CHANCE:
+		paint_layer.seed_drip(center_uv, col, AppConfig.DRIP_WIDTH, randf_range(AppConfig.DRIP_MIN_LEN, AppConfig.DRIP_MAX_LEN))
+		_dwell = int(_dwell * 0.5)

@@ -9,6 +9,7 @@ const MAX_UNDO := 20
 @onready var _wall := $Wall as BrickWall
 @onready var _camera: Camera3D = $Camera3D
 @onready var _menu := $SideMenu as SideMenu
+@onready var _hud := $Hud as Hud
 
 var _paint: PaintLayer
 var _spray: SprayTool
@@ -26,6 +27,7 @@ func _ready() -> void:
 		_menu.clear_requested.connect(_on_menu_clear)
 		_menu.undo_requested.connect(_undo)
 		_menu.save_requested.connect(_save_png)
+		_menu.tool_changed.connect(_report_state)
 	_report_state()
 
 
@@ -82,6 +84,9 @@ func _handle_actions() -> void:
 	if Input.is_action_just_pressed("toggle_menu"):
 		if _menu != null:
 			_menu.toggle()
+	if Input.is_action_just_pressed("toggle_hud"):
+		if _hud != null:
+			_hud.toggle()
 	if Input.is_action_just_pressed("clear_wall"):
 		_on_menu_clear()
 	if Input.is_action_just_pressed("undo"):
@@ -134,6 +139,8 @@ func _save_png() -> void:
 func _report_state() -> void:
 	if _spray == null:
 		return
+	if _hud != null:
+		_hud.set_state(_spray.current_nozzle().nozzle_name, _spray.current_color())
 	print("Nozzle: %s | Color %d (#%s)" % [
 		_spray.current_nozzle().nozzle_name,
 		_spray.color_index + 1,

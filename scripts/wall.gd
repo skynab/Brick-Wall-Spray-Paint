@@ -24,8 +24,11 @@ var _paint: PaintLayer
 
 func _ready() -> void:
 	_mesh = $Mesh
+	# Drive geometry + paint resolution from the central config.
+	paint_resolution = AppConfig.PAINT_RESOLUTION
 	var qm := _mesh.mesh as QuadMesh
 	if qm != null:
+		qm.size = AppConfig.WALL_SIZE
 		_quad_size = qm.size
 
 	# Create the paint accumulation layer.

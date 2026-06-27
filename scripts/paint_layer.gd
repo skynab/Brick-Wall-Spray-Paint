@@ -10,6 +10,7 @@ var texture: ImageTexture
 
 var _resolution: Vector2i = Vector2i(2048, 1152)
 var _dirty: bool = false
+var _drips: Array[Dictionary] = []
 
 
 func setup(resolution: Vector2i) -> void:
@@ -20,6 +21,8 @@ func setup(resolution: Vector2i) -> void:
 
 
 func _process(_delta: float) -> void:
+	if not _drips.is_empty():
+		_update_drips()
 	if _dirty:
 		texture.update(image)
 		_dirty = false
@@ -63,7 +66,40 @@ func stamp(center_uv: Vector2, color: Color, radius_px: float, opacity: float, s
 
 func clear() -> void:
 	image.fill(Color(0, 0, 0, 0))
+	_drips.clear()
 	_dirty = true
+
+
+## Start a drip running downward from `start_uv`. Cheap: one small dab per drip
+## per frame; the trail persists in the accumulation buffer.
+func seed_drip(start_uv: Vector2, color: Color, width: float, max_len: float) -> void:
+	if _drips.size() >= AppConfig.MAX_ACTIVE_DRIPS:
+		return
+	_drips.append({
+		"pos": Vector2(start_uv.x * float(_resolution.x - 1), start_uv.y * float(_resolution.y - 1)),
+		"color": color,
+		"width": width,
+		"traveled": 0.0,
+		"max_len": max_len,
+	})
+
+
+func _update_drips() -> void:
+	var i := 0
+	while i < _drips.size():
+		var d: Dictionary = _drips[i]
+		var pos: Vector2 = d.pos
+		pos.y += AppConfig.DRIP_SPEED
+		d.pos = pos
+		var traveled: float = float(d.traveled) + AppConfig.DRIP_SPEED
+		d.traveled = traveled
+		var t: float = traveled / float(d.max_len)
+		if t >= 1.0 or pos.y >= float(_resolution.y - 1):
+			_drips.remove_at(i)
+			continue
+		var uv := Vector2(pos.x / float(_resolution.x - 1), pos.y / float(_resolution.y - 1))
+		stamp(uv, d.color, float(d.width), (1.0 - t) * 0.5, 0.7)
+		i += 1
 
 
 ## Return an independent copy of the current buffer (for undo).

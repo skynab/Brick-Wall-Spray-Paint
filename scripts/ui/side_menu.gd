@@ -9,6 +9,9 @@ class_name SideMenu
 signal clear_requested
 signal undo_requested
 signal save_requested
+## Emitted when the menu changes the active nozzle or color, so the app can
+## refresh other views (e.g. the HUD).
+signal tool_changed
 
 const PANEL_WIDTH := 320.0
 const SLIDE_TIME := 0.22
@@ -247,6 +250,7 @@ func _update_slider_label(key: String, value: float, is_int: bool) -> void:
 func _on_color_changed(c: Color) -> void:
 	if _spray != null:
 		_spray.set_color(c)
+		tool_changed.emit()
 
 
 func _on_swatch_pressed(i: int) -> void:
@@ -254,6 +258,7 @@ func _on_swatch_pressed(i: int) -> void:
 		return
 	_spray.set_color_index(i)
 	_color_btn.color = _spray.current_color()
+	tool_changed.emit()
 
 
 func _on_nozzle_selected(idx: int) -> void:
@@ -261,6 +266,7 @@ func _on_nozzle_selected(idx: int) -> void:
 		return
 	_spray.nozzle_index = idx
 	_sync_sliders()
+	tool_changed.emit()
 
 
 func _on_slider_changed(value: float, key: String, is_int: bool, value_label: Label) -> void:
