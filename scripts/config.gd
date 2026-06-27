@@ -28,3 +28,6 @@ const DEFAULT_RIGID_BODY_ID := 1
 const CANISTER_FORWARD_AXIS := Vector3(0, 0, -1)
 ## Default proximity auto-spray threshold, in wall/world units (~metres).
 const PROXIMITY_DEFAULT_THRESHOLD := 0.05
+
+# --- Projection mapping ---
+const PROJECTION_CALIBRATION_PATH := "user://projection_calibration.tres"

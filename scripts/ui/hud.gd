@@ -4,7 +4,7 @@ class_name Hud
 ## Small top-left status overlay: current nozzle + color swatch and a one-line
 ## key legend. Dismissible with [H]. Built in code.
 
-const LEGEND := "[Space] spray   [Tab] nozzle   [C]/1-6 color   [X] clear   [Ctrl+Z] undo   [Ctrl+S] save   [M] menu   [H] hud"
+const LEGEND := "[Space] spray  [Tab] nozzle  [C]/1-6 color  [X] clear  [Ctrl+Z] undo  [Ctrl+S] save  [M] menu  [H] hud  [T] aim  [P] projector"
 
 var _swatch: ColorRect
 var _state: Label

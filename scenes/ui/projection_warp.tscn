@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cprojwarp0layer0"]
+
+[ext_resource type="Script" path="res://scripts/ui/projection_warp.gd" id="1_warp"]
+
+[node name="ProjectionWarp" type="CanvasLayer"]
+script = ExtResource("1_warp")

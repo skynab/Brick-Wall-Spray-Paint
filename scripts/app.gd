@@ -11,6 +11,7 @@ const MAX_UNDO := 20
 @onready var _camera: Camera3D = $Camera3D
 @onready var _menu := $SideMenu as SideMenu
 @onready var _hud := $Hud as Hud
+@onready var _projection := $ProjectionWarp as ProjectionWarp
 
 var _paint: PaintLayer
 var _spray: SprayTool
@@ -89,7 +90,11 @@ func _handle_spray() -> void:
 	if _paint == null:
 		return
 
-	# During calibration, the spray button captures wall corners instead of painting.
+	# While dragging projector corners, the mouse must not paint.
+	if _projection != null and _projection.is_calibrating():
+		return
+
+	# During wall calibration, the spray button captures wall corners instead of painting.
 	if _calibrating:
 		if Input.is_action_just_pressed("spray"):
 			_capture_calibration_point()
@@ -159,6 +164,9 @@ func _handle_actions() -> void:
 	if Input.is_action_just_pressed("cycle_aim"):
 		if _aim_sources.size() > 1:
 			_set_aim((_aim_index + 1) % _aim_sources.size())
+	if Input.is_action_just_pressed("projection_calib"):
+		if _projection != null:
+			_projection.toggle_calibration()
 	if Input.is_action_just_pressed("clear_wall"):
 		_on_menu_clear()
 	if Input.is_action_just_pressed("undo"):
