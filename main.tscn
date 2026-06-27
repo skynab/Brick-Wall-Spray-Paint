@@ -1,6 +1,28 @@
-[gd_scene load_steps=2 format=3 uid="uid://b1rckwallspray0"]
+[gd_scene load_steps=5 format=3 uid="uid://b1rckwallspray0"]
 
 [ext_resource type="Script" path="res://scripts/app.gd" id="1_app"]
+[ext_resource type="PackedScene" uid="uid://cbrickwall0wall" path="res://scenes/wall.tscn" id="2_wall"]
+
+[sub_resource type="Environment" id="Env_1"]
+background_mode = 0
+ambient_light_source = 2
+ambient_light_color = Color(1, 1, 1, 1)
+ambient_light_energy = 0.45
 
 [node name="App" type="Node3D"]
 script = ExtResource("1_app")
+
+[node name="Wall" parent="." instance=ExtResource("2_wall")]
+
+[node name="Camera3D" type="Camera3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 2.7)
+fov = 75.0
+current = true
+
+[node name="DirectionalLight3D" type="DirectionalLight3D" parent="."]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 3)
+light_energy = 0.65
+shadow_enabled = false
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="."]
+environment = SubResource("Env_1")
