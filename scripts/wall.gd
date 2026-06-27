@@ -89,6 +89,13 @@ func world_to_uv(world_pos: Vector3) -> Vector2:
 	return _local_to_uv(local)
 
 
+## Convert a wall UV in [0,1]x[0,1] to a world-space point on the wall face.
+## Inverse of world_to_uv; UVs outside [0,1] map past the face edges.
+func uv_to_world(uv: Vector2) -> Vector3:
+	var local := Vector3((uv.x - 0.5) * _quad_size.x, (0.5 - uv.y) * _quad_size.y, 0.0)
+	return _mesh.global_transform * local
+
+
 ## Intersect a world-space ray (origin + direction) with the wall plane.
 ## Returns the hit UV if it lands on the face, or null on a miss / parallel ray.
 func ray_plane_uv(origin: Vector3, direction: Vector3) -> Variant:

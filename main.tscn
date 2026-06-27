@@ -1,10 +1,11 @@
-[gd_scene load_steps=6 format=3 uid="uid://b1rckwallspray0"]
+[gd_scene load_steps=7 format=3 uid="uid://b1rckwallspray0"]
 
 [ext_resource type="Script" path="res://scripts/app.gd" id="1_app"]
 [ext_resource type="PackedScene" uid="uid://cbrickwall0wall" path="res://scenes/wall.tscn" id="2_wall"]
 [ext_resource type="PackedScene" uid="uid://csidemenu0ui01" path="res://scenes/ui/side_menu.tscn" id="3_menu"]
 [ext_resource type="PackedScene" uid="uid://chud0overlay001" path="res://scenes/ui/hud.tscn" id="4_hud"]
 [ext_resource type="PackedScene" uid="uid://cprojwarp0layer0" path="res://scenes/ui/projection_warp.tscn" id="5_warp"]
+[ext_resource type="PackedScene" uid="uid://cspraycursor0001" path="res://scenes/ui/spray_cursor.tscn" id="6_cursor"]
 
 [sub_resource type="Environment" id="Env_1"]
 background_mode = 0
@@ -31,6 +32,8 @@ shadow_enabled = false
 environment = SubResource("Env_1")
 
 [node name="ProjectionWarp" parent="." instance=ExtResource("5_warp")]
+
+[node name="SprayCursor" parent="." instance=ExtResource("6_cursor")]
 
 [node name="SideMenu" parent="." instance=ExtResource("3_menu")]
 

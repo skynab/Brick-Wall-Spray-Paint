@@ -11,6 +11,7 @@ const MAX_UNDO := 20
 @onready var _camera: Camera3D = $Camera3D
 @onready var _menu := $SideMenu as SideMenu
 @onready var _hud := $Hud as Hud
+@onready var _cursor := $SprayCursor as SprayCursor
 @onready var _projection := $ProjectionWarp as ProjectionWarp
 
 var _paint: PaintLayer
@@ -79,6 +80,7 @@ func _active_aim() -> AimSource:
 func _process(_delta: float) -> void:
 	_handle_actions()
 	_handle_spray()
+	_update_cursor()
 	# Keep the tracker's connection state visible while it's the active source.
 	if _active_aim() == _tracker:
 		_update_aim_status()
@@ -139,6 +141,32 @@ func _aim_uv() -> Variant:
 	return _wall.ray_plane_uv(ray["origin"], ray["direction"])
 
 
+# --- Aim preview cursor -----------------------------------------------------
+
+## Project the active nozzle's footprint outline onto the screen at the aim point.
+func _update_cursor() -> void:
+	if _cursor == null or _wall == null or _camera == null or _paint == null:
+		return
+	# Hide the preview during calibration flows or while using the menu.
+	if _calibrating or (_projection != null and _projection.is_calibrating()):
+		_cursor.clear()
+		return
+	if _menu != null and _menu.is_pointing_at_menu():
+		_cursor.clear()
+		return
+	var uv = _aim_uv()
+	if uv == null:
+		_cursor.clear()
+		return
+	var loop := _spray.footprint_outline_uv(uv, _paint.get_resolution())
+	var pts := PackedVector2Array()
+	for p in loop:
+		pts.append(_camera.unproject_position(_wall.uv_to_world(p)))
+	var col := _spray.current_color()
+	col.a = 0.7
+	_cursor.set_outline(pts, col)
+
+
 # --- Actions ----------------------------------------------------------------
 
 func _handle_actions() -> void:
@@ -161,6 +189,9 @@ func _handle_actions() -> void:
 	if Input.is_action_just_pressed("toggle_hud"):
 		if _hud != null:
 			_hud.toggle()
+	if Input.is_action_just_pressed("toggle_cursor"):
+		if _cursor != null:
+			_cursor.toggle()
 	if Input.is_action_just_pressed("cycle_aim"):
 		if _aim_sources.size() > 1:
 			_set_aim((_aim_index + 1) % _aim_sources.size())
@@ -309,7 +340,7 @@ func _report_state() -> void:
 	if _spray == null:
 		return
 	if _hud != null:
-		_hud.set_state(_spray.current_nozzle().nozzle_name, _spray.current_color())
+		_hud.set_state(_spray.current_nozzle().nozzle_name, _spray.current_nozzle().shape_label(), _spray.current_color())
 	print("Nozzle: %s | Color %d (#%s)" % [
 		_spray.current_nozzle().nozzle_name,
 		_spray.color_index + 1,

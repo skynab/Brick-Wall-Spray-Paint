@@ -12,6 +12,9 @@ class_name Nozzle
 ##   SPLATTER — sparse jittered specks with size variation.
 enum Shape { ROUND, OVAL, LINE, SQUARE, SPLATTER }
 
+## Human-readable Shape names, indexed by the enum.
+const SHAPE_LABELS := ["Round", "Oval", "Line", "Square", "Splatter"]
+
 ## Display name shown in the HUD / menu.
 @export var nozzle_name: String = "Nozzle"
 ## Footprint geometry of the spray cone.
@@ -35,3 +38,8 @@ enum Shape { ROUND, OVAL, LINE, SQUARE, SPLATTER }
 @export_range(0.0, 1.0) var build_rate: float = 0.08
 ## Chance (0..1) a droplet seeds a drip. 0 until Phase 5.
 @export_range(0.0, 1.0) var drip_chance: float = 0.0
+
+
+## Display name of this nozzle's footprint shape.
+func shape_label() -> String:
+	return SHAPE_LABELS[shape] if shape >= 0 and shape < SHAPE_LABELS.size() else "?"

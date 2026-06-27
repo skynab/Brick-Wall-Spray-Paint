@@ -148,7 +148,9 @@ func _sample_offset(shape: int, aspect: float) -> Dictionary:
 			return {"pos": Vector2(cos(ang), sin(ang)) * r, "norm": r, "size": 1.0}
 
 
-## Seed a drip when the spray lingers over one spot (heavy build-up).
+## Seed a drip when the spray lingers over one spot (heavy build-up). The drip
+## starts at a random point inside the footprint so wide/line shapes drip across
+## their whole width, not just from the centre.
 func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, center_uv: Vector2, col: Color, noz: Nozzle) -> void:
 	if center.distance_to(_last_center) < noz.radius_px * 0.5:
 		_dwell += 1
@@ -156,5 +158,54 @@ func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, center_uv: Ve
 		_dwell = 0
 	_last_center = center
 	if _dwell >= AppConfig.DRIP_DWELL_FRAMES and randf() < AppConfig.DRIP_DWELL_SEED_CHANCE:
-		paint_layer.seed_drip(center_uv, col, AppConfig.DRIP_WIDTH, randf_range(AppConfig.DRIP_MIN_LEN, AppConfig.DRIP_MAX_LEN))
+		var res := paint_layer.get_resolution()
+		var spread := noz.radius_px * lerpf(0.15, 1.0, clampf(noz.scatter, 0.0, 1.0))
+		var s := _sample_offset(noz.shape, maxf(noz.aspect, 1.0))
+		var off: Vector2 = s.pos
+		var sp := center + (off * spread).rotated(deg_to_rad(noz.angle))
+		var seed_uv := Vector2(sp.x / float(res.x - 1), sp.y / float(res.y - 1))
+		paint_layer.seed_drip(seed_uv, col, AppConfig.DRIP_WIDTH, randf_range(AppConfig.DRIP_MIN_LEN, AppConfig.DRIP_MAX_LEN))
 		_dwell = int(_dwell * 0.5)
+
+
+## Closed-loop outline of the current nozzle's footprint, in wall-UV space, for
+## the aim cursor. Mirrors the geometry that spray()/_sample_offset produces.
+func footprint_outline_uv(center_uv: Vector2, res: Vector2i) -> PackedVector2Array:
+	var noz := current_nozzle()
+	var spread := noz.radius_px * lerpf(0.15, 1.0, clampf(noz.scatter, 0.0, 1.0))
+	var rot := deg_to_rad(noz.angle)
+	var aspect := maxf(noz.aspect, 1.0)
+	var center := Vector2(center_uv.x * float(res.x - 1), center_uv.y * float(res.y - 1))
+	var out := PackedVector2Array()
+	for u in _outline_unit(noz.shape, aspect):
+		var p := center + (u * spread).rotated(rot)
+		out.append(Vector2(p.x / float(res.x - 1), p.y / float(res.y - 1)))
+	return out
+
+
+## Unit-space outline points (closed loop) for a footprint shape.
+func _outline_unit(shape: int, aspect: float) -> PackedVector2Array:
+	match shape:
+		Nozzle.Shape.OVAL:
+			return _ellipse_loop(aspect, 1.0)
+		Nozzle.Shape.LINE:
+			return _rect_loop(aspect, 0.12)
+		Nozzle.Shape.SQUARE:
+			return _rect_loop(aspect, 1.0)
+		_:
+			# ROUND / SPLATTER: a circle bounding the spray cone.
+			return _ellipse_loop(1.0, 1.0)
+
+
+func _ellipse_loop(rx: float, ry: float, segments: int = 28) -> PackedVector2Array:
+	var pts := PackedVector2Array()
+	for i in range(segments + 1):  # +1 closes the loop
+		var a := TAU * float(i) / float(segments)
+		pts.append(Vector2(cos(a) * rx, sin(a) * ry))
+	return pts
+
+
+func _rect_loop(hx: float, hy: float) -> PackedVector2Array:
+	return PackedVector2Array([
+		Vector2(-hx, -hy), Vector2(hx, -hy), Vector2(hx, hy), Vector2(-hx, hy), Vector2(-hx, -hy),
+	])

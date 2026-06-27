@@ -4,7 +4,7 @@ class_name Hud
 ## Small top-left status overlay: current nozzle + color swatch and a one-line
 ## key legend. Dismissible with [H]. Built in code.
 
-const LEGEND := "[Space] spray  [Tab] nozzle  [C]/1-6 color  [X] clear  [Ctrl+Z] undo  [Ctrl+S] save  [M] menu  [H] hud  [T] aim  [P] projector"
+const LEGEND := "[Space] spray  [Tab] nozzle  [C]/1-6 color  [X] clear  [Ctrl+Z] undo  [Ctrl+S] save  [M] menu  [H] hud  [V] cursor  [T] aim  [P] projector"
 
 var _swatch: ColorRect
 var _state: Label
@@ -40,11 +40,11 @@ func _ready() -> void:
 	vbox.add_child(legend)
 
 
-func set_state(nozzle_name: String, color: Color) -> void:
+func set_state(nozzle_name: String, shape_name: String, color: Color) -> void:
 	if _swatch != null:
 		_swatch.color = color
 	if _state != null:
-		_state.text = "%s   #%s" % [nozzle_name, color.to_html(false)]
+		_state.text = "%s · %s   #%s" % [nozzle_name, shape_name, color.to_html(false)]
 
 
 func toggle() -> void:
