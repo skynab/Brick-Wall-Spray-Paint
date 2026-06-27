@@ -67,6 +67,7 @@ func _ready() -> void:
 		_menu.wall_selected.connect(_on_wall_selected)
 		_menu.vignette_changed.connect(_on_vignette_changed)
 		_menu.mouse_aim_changed.connect(_on_mouse_aim_changed)
+		_menu.drips_toggled.connect(func(on): _spray.drips_enabled = on)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
 		if _tracker_settings != null:
 			_menu.set_tracker_settings(
@@ -108,6 +109,10 @@ func _active_aim() -> AimSource:
 
 func _process(delta: float) -> void:
 	_handle_actions()
+	# Roll from the active aim source rotates shaped nozzle footprints.
+	var src := _active_aim()
+	if _spray != null:
+		_spray.extra_roll_deg = src.get_roll() if src != null else 0.0
 	_handle_spray()
 	_update_cursor()
 	_update_clear_timer(delta)
@@ -208,7 +213,7 @@ func _handle_actions() -> void:
 		_spray.cycle_color()
 		_sync_menu()
 		_report_state()
-	for i in 6:
+	for i in 7:
 		if Input.is_action_just_pressed("palette_%d" % (i + 1)):
 			_spray.set_color_index(i)
 			_sync_menu()
@@ -268,11 +273,12 @@ func _on_vignette_changed(strength: float, extent: float, softness: float) -> vo
 		_wall.set_vignette(strength, extent, softness)
 
 
-func _on_mouse_aim_changed(distance: float, pitch: float, yaw: float) -> void:
+func _on_mouse_aim_changed(distance: float, pitch: float, yaw: float, roll: float) -> void:
 	if _mouse != null:
 		_mouse.distance = distance
 		_mouse.pitch_deg = pitch
 		_mouse.yaw_deg = yaw
+		_mouse.roll_deg = roll
 
 
 ## Clear the wall, snapshotting first so it can be undone, and reset the

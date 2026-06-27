@@ -12,6 +12,12 @@ func get_ray() -> Dictionary:
 	return {"valid": false}
 
 
+## Roll of the can about its spray direction, in degrees. Doesn't move the hit
+## point, but rotates the nozzle's shaped footprint (e.g. NY Thin). 0 by default.
+func get_roll() -> float:
+	return 0.0
+
+
 ## Whether this source can currently produce aim (e.g. tracker connected).
 func is_active() -> bool:
 	return false

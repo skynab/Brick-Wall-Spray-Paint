@@ -12,12 +12,14 @@ signal save_requested
 ## Emitted when the menu changes the active nozzle or color, so the app can
 ## refresh other views (e.g. the HUD).
 signal tool_changed
+## Emitted when the drips on/off toggle changes.
+signal drips_toggled(enabled: bool)
 ## Emitted when the user picks a different brick-wall background.
 signal wall_selected(path: String)
 ## Emitted when any vignette control changes (carries all three current values).
 signal vignette_changed(strength: float, extent: float, softness: float)
-## Emitted when the mouse aim source's distance/pitch/yaw change.
-signal mouse_aim_changed(distance: float, pitch: float, yaw: float)
+## Emitted when the mouse aim source's distance/pitch/yaw/roll change.
+signal mouse_aim_changed(distance: float, pitch: float, yaw: float, roll: float)
 ## Emitted when the user picks a different aim source.
 signal aim_source_selected(index: int)
 ## Tracker controls.
@@ -48,7 +50,6 @@ const SLIDER_SPECS := [
 	["droplet_size_px", "Droplet size", 1.0, 40.0, 1.0, false, true],
 	["softness", "Softness", 0.0, 1.0, 0.01, false, true],
 	["build_rate", "Build rate", 0.0, 1.0, 0.01, false, true],
-	["drip_chance", "Drip", 0.0, 1.0, 0.01, false, true],
 	["aspect", "Aspect", 1.0, 8.0, 0.1, false, true],
 	["angle", "Angle", -180.0, 180.0, 1.0, true, true],
 ]
@@ -213,25 +214,21 @@ func _build_ui() -> void:
 	vbox.add_child(title_row)
 
 	# Wall background section (Simple)
-	vbox.add_child(_make_label("Wall"))
+	vbox.add_child(_make_section_header("Wall"))
 	_wall_opt = OptionButton.new()
 	_wall_opt.item_selected.connect(_on_wall_selected)
 	vbox.add_child(_wall_opt)
 
-	vbox.add_child(HSeparator.new())
-
 	# Color section (Simple)
-	vbox.add_child(_make_label("Color"))
+	vbox.add_child(_make_section_header("Color"))
 	_color_btn = ColorPickerButton.new()
 	_color_btn.custom_minimum_size = Vector2(0, 32)
 	_color_btn.color_changed.connect(_on_color_changed)
 	vbox.add_child(_color_btn)
 	vbox.add_child(_make_palette_row())
 
-	vbox.add_child(HSeparator.new())
-
 	# Nozzle section (Simple): preset + shape + radius.
-	vbox.add_child(_make_label("Nozzle"))
+	vbox.add_child(_make_section_header("Nozzle"))
 	_nozzle_opt = OptionButton.new()
 	_nozzle_opt.item_selected.connect(_on_nozzle_selected)
 	vbox.add_child(_nozzle_opt)
@@ -272,6 +269,14 @@ func _build_ui() -> void:
 		vbox.add_child(row)
 		if bool(spec[6]):
 			_advanced_nodes.append(row)
+
+	# Drips on/off (Advanced). Drips only form when lingering over one spot.
+	var drips_check := CheckButton.new()
+	drips_check.text = "Drips"
+	drips_check.button_pressed = true
+	drips_check.toggled.connect(func(on): drips_toggled.emit(on))
+	vbox.add_child(drips_check)
+	_advanced_nodes.append(drips_check)
 
 	# Reset (Advanced): undo live slider edits.
 	var reset_btn := _make_action_button("Reset nozzle", _on_reset_pressed)
@@ -318,7 +323,7 @@ func _build_ui() -> void:
 	_status = _make_label("Tracker: —")
 	vbox.add_child(_status)
 
-	var hint := _make_label("[M] hide  [Tab] nozzle  [C]/1-6 color")
+	var hint := _make_label("[M] hide  [Tab] nozzle  [C]/1-7 color")
 	hint.add_theme_font_size_override("font_size", 11)
 	hint.modulate = Color(1, 1, 1, 0.5)
 	vbox.add_child(hint)
@@ -329,8 +334,7 @@ func _build_clear_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 
-	box.add_child(HSeparator.new())
-	box.add_child(_make_label("Auto-clear"))
+	box.add_child(_make_section_header("Auto-clear"))
 
 	var mode_opt := OptionButton.new()
 	mode_opt.add_item("Manual")   # index 0 -> ClearMode.MANUAL
@@ -377,8 +381,7 @@ const VIGNETTE_SPECS := [
 func _build_vignette_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(HSeparator.new())
-	box.add_child(_make_label("Vignette"))
+	box.add_child(_make_section_header("Vignette"))
 
 	for spec in VIGNETTE_SPECS:
 		var key: String = spec[0]
@@ -412,14 +415,14 @@ const MOUSE_AIM_SPECS := [
 	["distance", "Distance", 0.0, 2.5, 0.05, 0.0, " m"],
 	["pitch", "Pitch", -70.0, 70.0, 1.0, 0.0, "°"],
 	["yaw", "Yaw", -70.0, 70.0, 1.0, 0.0, "°"],
+	["roll", "Roll", -180.0, 180.0, 1.0, 0.0, "°"],
 ]
 
 
 func _build_mouse_aim_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(HSeparator.new())
-	box.add_child(_make_label("Mouse aim (3D)"))
+	box.add_child(_make_section_header("Mouse aim (3D)"))
 
 	for spec in MOUSE_AIM_SPECS:
 		var key: String = spec[0]
@@ -455,8 +458,7 @@ func _build_optitrack_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 
-	box.add_child(HSeparator.new())
-	box.add_child(_make_title("OPTITRACK"))
+	box.add_child(_make_section_header("OptiTrack"))
 
 	box.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()
@@ -534,7 +536,7 @@ func _make_ip_row(parent: VBoxContainer, label_text: String, default_ip: String)
 func _build_proximity_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(HSeparator.new())
+	box.add_child(_make_section_header("Proximity"))
 
 	var prox_check := CheckBox.new()
 	prox_check.text = "Auto-spray near wall"
@@ -543,7 +545,7 @@ func _build_proximity_section() -> VBoxContainer:
 
 	var prox_header := HBoxContainer.new()
 	var prox_name := Label.new()
-	prox_name.text = "Proximity"
+	prox_name.text = "Threshold (m)"
 	prox_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_prox_value = Label.new()
 	_prox_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
@@ -573,6 +575,26 @@ func _make_label(text: String) -> Label:
 	var l := Label.new()
 	l.text = text
 	return l
+
+
+## A distinct, banded section header so groups are easy to tell apart.
+func _make_section_header(text: String) -> PanelContainer:
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.20, 0.42, 0.62, 0.55)
+	sb.set_corner_radius_all(4)
+	sb.set_content_margin_all(4)
+	sb.content_margin_left = 8
+	# A bright accent bar down the left edge.
+	sb.border_color = Color(0.45, 0.75, 1.0)
+	sb.border_width_left = 3
+	panel.add_theme_stylebox_override("panel", sb)
+	var l := Label.new()
+	l.text = text.to_upper()
+	l.add_theme_font_size_override("font_size", 13)
+	l.add_theme_color_override("font_color", Color(0.92, 0.97, 1.0))
+	panel.add_child(l)
+	return panel
 
 
 func _make_palette_row() -> HBoxContainer:
@@ -739,6 +761,7 @@ func _emit_mouse_aim() -> void:
 		float(_mouse_sliders["distance"].value),
 		float(_mouse_sliders["pitch"].value),
 		float(_mouse_sliders["yaw"].value),
+		float(_mouse_sliders["roll"].value),
 	)
 
 
@@ -798,7 +821,7 @@ func _on_offset_changed(_v: float) -> void:
 
 
 ## Initialize the OptiTrack controls from persisted settings (no signals fired).
-func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool, offset: Vector3) -> void:
+func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool, pos_offset: Vector3) -> void:
 	if _server_ip_edit != null:
 		_server_ip_edit.text = server_ip
 	if _client_ip_edit != null:
@@ -806,9 +829,9 @@ func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool,
 	if _multicast_opt != null:
 		_multicast_opt.select(0 if multicast else 1)
 	if _offset_spins.has("x"):
-		_offset_spins["x"].set_value_no_signal(offset.x)
-		_offset_spins["y"].set_value_no_signal(offset.y)
-		_offset_spins["z"].set_value_no_signal(offset.z)
+		_offset_spins["x"].set_value_no_signal(pos_offset.x)
+		_offset_spins["y"].set_value_no_signal(pos_offset.y)
+		_offset_spins["z"].set_value_no_signal(pos_offset.z)
 
 
 func _on_prox_slider_changed(v: float) -> void:

@@ -25,8 +25,8 @@ const DRIP_SPEED := 3.0            # px advanced per frame
 const DRIP_WIDTH := 3.0            # dab radius of the running head
 const DRIP_MIN_LEN := 40.0         # px
 const DRIP_MAX_LEN := 170.0        # px
-const DRIP_DWELL_FRAMES := 36      # frames lingering before a heavy-buildup drip
-const DRIP_DWELL_SEED_CHANCE := 0.05
+const DRIP_DWELL_FRAMES := 72      # frames (~1.2s at 60fps) lingering in one spot before a drip
+const DRIP_DWELL_SEED_CHANCE := 0.06
 
 # --- OptiTrack / tracker ---
 const OPTITRACK_SINGLETON_PATH := "/root/OptiTrack"

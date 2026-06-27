@@ -25,6 +25,7 @@ var palette: Array[Color] = [
 	Color("39d353"), # green
 	Color("3da5ff"), # blue
 	Color("ffffff"), # white
+	Color("000000"), # black
 ]
 var color_index: int = 0
 ## The active paint color. Tracks the palette on index changes, but can also be
@@ -35,6 +36,14 @@ var active_color: Color = Color.WHITE
 ## of the active nozzle's flow. 1.0 = the nozzle's native rate. Global so it
 ## persists across nozzle changes, like turning the can's pressure up or down.
 var output_rate: float = 1.0
+
+## Extra footprint rotation (degrees) from the aim source's roll, added to each
+## nozzle's own `angle` so shaped caps (e.g. NY Thin) can be spun while spraying.
+var extra_roll_deg: float = 0.0
+
+## When true, lingering over one spot too long seeds running drips. Off disables
+## drips entirely.
+var drips_enabled: bool = true
 
 # Dwell tracking for heavy-buildup drips.
 var _last_center: Vector2 = Vector2.ZERO
@@ -99,7 +108,7 @@ func spray(paint_layer: PaintLayer, center_uv: Vector2) -> void:
 	var col := current_color()
 	var center := Vector2(center_uv.x * float(res.x - 1), center_uv.y * float(res.y - 1))
 	var spread := noz.radius_px * lerpf(0.15, 1.0, clampf(noz.scatter, 0.0, 1.0))
-	var rot := deg_to_rad(noz.angle)
+	var rot := deg_to_rad(noz.angle + extra_roll_deg)
 	var flow := maxi(1, int(round(noz.flow * output_rate)))
 
 	for i in flow:
@@ -113,11 +122,12 @@ func spray(paint_layer: PaintLayer, center_uv: Vector2) -> void:
 		# Feather the cone: droplets near the rim deposit less paint.
 		var edge: float = 1.0 - smoothstep(AppConfig.SPRAY_EDGE_START, 1.0, norm)
 		paint_layer.stamp(uv, col, noz.droplet_size_px * size, noz.build_rate * edge, noz.softness)
-		# Per-droplet random drip (driven by the menu's Drip slider).
-		if noz.drip_chance > 0.0 and randf() < noz.drip_chance:
-			paint_layer.seed_drip(uv, col, AppConfig.DRIP_WIDTH, randf_range(AppConfig.DRIP_MIN_LEN, AppConfig.DRIP_MAX_LEN))
 
-	_update_dwell_drips(paint_layer, center, center_uv, col, noz)
+	# Drips only build up from dwelling too long over one spot (see below).
+	if drips_enabled:
+		_update_dwell_drips(paint_layer, center, center_uv, col, noz)
+	else:
+		_dwell = 0
 
 
 ## Pick one droplet's position within a nozzle's footprint, in unit space
@@ -179,7 +189,7 @@ func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, _center_uv: V
 func footprint_outline_uv(center_uv: Vector2, res: Vector2i) -> PackedVector2Array:
 	var noz := current_nozzle()
 	var spread := noz.radius_px * lerpf(0.15, 1.0, clampf(noz.scatter, 0.0, 1.0))
-	var rot := deg_to_rad(noz.angle)
+	var rot := deg_to_rad(noz.angle + extra_roll_deg)
 	var aspect := maxf(noz.aspect, 1.0)
 	var center := Vector2(center_uv.x * float(res.x - 1), center_uv.y * float(res.y - 1))
 	var out := PackedVector2Array()

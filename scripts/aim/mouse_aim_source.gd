@@ -18,6 +18,8 @@ var distance := 0.0
 ## Spray-direction tilt about the wall's right (X) and up (Y) axes, in degrees.
 var pitch_deg := 0.0
 var yaw_deg := 0.0
+## Roll about the spray direction — rotates the nozzle's shaped footprint.
+var roll_deg := 0.0
 
 
 func _init(camera: Camera3D, wall: BrickWall = null) -> void:
@@ -42,6 +44,10 @@ func get_ray() -> Dictionary:
 	fwd = fwd.rotated(_wall.wall_right(), deg_to_rad(pitch_deg))
 	fwd = fwd.rotated(_wall.wall_up(), deg_to_rad(yaw_deg))
 	return {"origin": origin, "direction": fwd.normalized(), "valid": true}
+
+
+func get_roll() -> float:
+	return roll_deg
 
 
 func is_active() -> bool:
