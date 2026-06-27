@@ -12,6 +12,8 @@ signal save_requested
 ## Emitted when the menu changes the active nozzle or color, so the app can
 ## refresh other views (e.g. the HUD).
 signal tool_changed
+## Emitted when the user picks a different aim source.
+signal aim_source_selected(index: int)
 
 const PANEL_WIDTH := 320.0
 const SLIDE_TIME := 0.22
@@ -32,6 +34,7 @@ var _spray: SprayTool
 var _panel: PanelContainer
 var _color_btn: ColorPickerButton
 var _nozzle_opt: OptionButton
+var _aim_opt: OptionButton
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
 var _slider_labels: Dictionary = {} # key -> Label
@@ -68,6 +71,23 @@ func set_status(text: String) -> void:
 		_status.text = text
 
 
+## Populate the aim-source dropdown and select the active one.
+func set_aim_sources(labels: PackedStringArray, current: int) -> void:
+	if _aim_opt == null:
+		return
+	_aim_opt.clear()
+	for l in labels:
+		_aim_opt.add_item(l)
+	if current >= 0 and current < labels.size():
+		_aim_opt.select(current)
+
+
+## Reflect an aim change made elsewhere (e.g. the keyboard) without re-emitting.
+func select_aim(index: int) -> void:
+	if _aim_opt != null and index >= 0 and index < _aim_opt.item_count:
+		_aim_opt.select(index)
+
+
 ## True when the panel is visible and the mouse is over it — used by the app to
 ## suppress spraying while the user interacts with the menu.
 func is_pointing_at_menu() -> bool:
@@ -102,6 +122,14 @@ func _build_ui() -> void:
 	margin.add_child(vbox)
 
 	vbox.add_child(_make_title("SPRAY CONTROLS"))
+
+	# Aim source section
+	vbox.add_child(_make_label("Aim source"))
+	_aim_opt = OptionButton.new()
+	_aim_opt.item_selected.connect(_on_aim_selected)
+	vbox.add_child(_aim_opt)
+
+	vbox.add_child(HSeparator.new())
 
 	# Color section
 	vbox.add_child(_make_label("Color"))
@@ -267,6 +295,10 @@ func _on_nozzle_selected(idx: int) -> void:
 	_spray.nozzle_index = idx
 	_sync_sliders()
 	tool_changed.emit()
+
+
+func _on_aim_selected(idx: int) -> void:
+	aim_source_selected.emit(idx)
 
 
 func _on_slider_changed(value: float, key: String, is_int: bool, value_label: Label) -> void:
