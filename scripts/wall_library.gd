@@ -16,7 +16,13 @@ const DEFAULT_WALL := "res://assets/brick_wall.jpg"
 const BUNDLED_DIR := "res://assets/walls"
 ## Extra images shipped inside the build. Add a line here whenever a new image
 ## is committed to assets/walls/ so it appears in exported builds too.
+## Labels are auto-derived from the filename, e.g. "black_brick" -> "Black Brick".
 const BUNDLED_WALLS: Array[String] = [
+	"res://assets/walls/black_brick.jpg",
+	"res://assets/walls/warm_glow_brick.jpg",
+	"res://assets/walls/dark_aged_brick.jpg",
+	"res://assets/walls/new_red_brick.jpg",
+	"res://assets/walls/orange_weathered_brick.jpg",
 ]
 const IMAGE_EXTS := ["jpg", "jpeg", "png", "webp"]
 
@@ -43,8 +49,12 @@ static func list_walls() -> Array[Dictionary]:
 static func _all_paths() -> PackedStringArray:
 	var paths := PackedStringArray()
 	paths.append(DEFAULT_WALL)
+	# Only list bundled images that are actually present/imported, so the
+	# dropdown never shows a wall that fails to load. They appear once the file
+	# is added to assets/walls/ and the project is imported in the editor.
 	for p in BUNDLED_WALLS:
-		paths.append(p)
+		if ResourceLoader.exists(p):
+			paths.append(p)
 	# Editor-only convenience: auto-discover images dropped into the bundled
 	# folder without having to also list them in BUNDLED_WALLS.
 	if OS.has_feature("editor"):

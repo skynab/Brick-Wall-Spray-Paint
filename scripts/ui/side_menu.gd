@@ -178,9 +178,16 @@ func _build_ui() -> void:
 		margin.add_theme_constant_override("margin_" + side, 14)
 	_panel.add_child(margin)
 
+	# Scroll the controls vertically so the (taller) Advanced list stays reachable
+	# when it overflows the panel height.
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	margin.add_child(scroll)
+
 	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vbox.add_theme_constant_override("separation", 8)
-	margin.add_child(vbox)
+	scroll.add_child(vbox)
 
 	# Title row: heading + Simple/Advanced toggle.
 	var title_row := HBoxContainer.new()
