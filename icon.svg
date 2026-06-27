@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128">
+  <defs>
+    <clipPath id="round">
+      <rect x="2" y="2" width="124" height="124" rx="22" ry="22"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#round)">
+    <!-- mortar -->
+    <rect x="0" y="0" width="128" height="128" fill="#d9d2c4"/>
+
+    <!-- brick courses (running bond), height 16, 4px mortar gaps -->
+    <g>
+      <!-- row 1 (y=6) -->
+      <rect x="-8"  y="6"   width="40" height="16" rx="2" fill="#b04a37"/>
+      <rect x="36"  y="6"   width="40" height="16" rx="2" fill="#a6402e"/>
+      <rect x="80"  y="6"   width="40" height="16" rx="2" fill="#bb5440"/>
+      <!-- row 2 (y=26) -->
+      <rect x="-30" y="26"  width="40" height="16" rx="2" fill="#a83f2d"/>
+      <rect x="14"  y="26"  width="40" height="16" rx="2" fill="#b9503c"/>
+      <rect x="58"  y="26"  width="40" height="16" rx="2" fill="#9e3a29"/>
+      <rect x="102" y="26"  width="40" height="16" rx="2" fill="#b34c39"/>
+      <!-- row 3 (y=46) -->
+      <rect x="-8"  y="46"  width="40" height="16" rx="2" fill="#bb5440"/>
+      <rect x="36"  y="46"  width="40" height="16" rx="2" fill="#a6402e"/>
+      <rect x="80"  y="46"  width="40" height="16" rx="2" fill="#ad4734"/>
+      <!-- row 4 (y=66) -->
+      <rect x="-30" y="66"  width="40" height="16" rx="2" fill="#b04a37"/>
+      <rect x="14"  y="66"  width="40" height="16" rx="2" fill="#9e3a29"/>
+      <rect x="58"  y="66"  width="40" height="16" rx="2" fill="#b9503c"/>
+      <rect x="102" y="66"  width="40" height="16" rx="2" fill="#a83f2d"/>
+      <!-- row 5 (y=86) -->
+      <rect x="-8"  y="86"  width="40" height="16" rx="2" fill="#a6402e"/>
+      <rect x="36"  y="86"  width="40" height="16" rx="2" fill="#b34c39"/>
+      <rect x="80"  y="86"  width="40" height="16" rx="2" fill="#bb5440"/>
+      <!-- row 6 (y=106) -->
+      <rect x="-30" y="106" width="40" height="16" rx="2" fill="#b9503c"/>
+      <rect x="14"  y="106" width="40" height="16" rx="2" fill="#a83f2d"/>
+      <rect x="58"  y="106" width="40" height="16" rx="2" fill="#ad4734"/>
+      <rect x="102" y="106" width="40" height="16" rx="2" fill="#a6402e"/>
+    </g>
+
+    <!-- spray-paint splat -->
+    <g fill="#23c8c0" opacity="0.93">
+      <!-- drip -->
+      <rect x="76.5" y="82" width="6" height="22" rx="3"/>
+      <circle cx="79.5" cy="106" r="5"/>
+      <!-- core cluster -->
+      <circle cx="80" cy="70" r="19"/>
+      <circle cx="64" cy="63" r="11"/>
+      <circle cx="95" cy="65" r="12"/>
+      <circle cx="71" cy="85" r="11"/>
+      <circle cx="92" cy="84" r="10"/>
+      <circle cx="80" cy="56" r="9"/>
+      <!-- scatter droplets -->
+      <circle cx="106" cy="58" r="4.5"/>
+      <circle cx="55"  cy="80" r="4"/>
+      <circle cx="100" cy="97" r="3.5"/>
+      <circle cx="59"  cy="56" r="3.5"/>
+      <circle cx="110" cy="78" r="3"/>
+      <circle cx="48"  cy="66" r="2.5"/>
+      <circle cx="86"  cy="100" r="2.5"/>
+    </g>
+    <!-- highlight on the splat -->
+    <circle cx="74" cy="63" r="5" fill="#7ff0ea" opacity="0.7"/>
+  </g>
+</svg>
