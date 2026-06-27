@@ -12,6 +12,10 @@ signal save_requested
 ## Emitted when the menu changes the active nozzle or color, so the app can
 ## refresh other views (e.g. the HUD).
 signal tool_changed
+## Emitted when the user picks a different brick-wall background.
+signal wall_selected(path: String)
+## Emitted when any vignette control changes (carries all three current values).
+signal vignette_changed(strength: float, extent: float, softness: float)
 ## Emitted when the user picks a different aim source.
 signal aim_source_selected(index: int)
 ## Tracker controls.
@@ -19,6 +23,9 @@ signal aim_asset_id_changed(id: int)
 signal calibrate_requested
 signal proximity_toggled(enabled: bool)
 signal proximity_threshold_changed(value: float)
+## Wall auto-clear controls.
+signal clear_mode_changed(mode: int)
+signal clear_interval_changed(seconds: float)
 
 const PANEL_WIDTH := 320.0
 const SLIDE_TIME := 0.22
@@ -45,8 +52,16 @@ var _spray: SprayTool
 
 var _panel: PanelContainer
 var _color_btn: ColorPickerButton
+var _wall_opt: OptionButton
+var _wall_paths: PackedStringArray = PackedStringArray()
 var _nozzle_opt: OptionButton
 var _shape_opt: OptionButton
+var _output_slider: HSlider
+var _output_label: Label
+var _clear_interval_label: Label
+var _clear_status: Label
+var _vig_sliders: Dictionary = {}       # key -> HSlider
+var _vig_labels: Dictionary = {}        # key -> Label
 var _aim_opt: OptionButton
 var _prox_value: Label
 var _status: Label
@@ -86,12 +101,35 @@ func sync_from_tool() -> void:
 	_color_btn.color = _spray.current_color()
 	if _shape_opt != null:
 		_shape_opt.select(int(_spray.current_nozzle().shape))
+	if _output_slider != null:
+		_output_slider.set_value_no_signal(_spray.output_rate)
+		_output_label.text = "%.2fx" % _spray.output_rate
 	_sync_sliders()
 
 
 func set_status(text: String) -> void:
 	if _status != null:
 		_status.text = text
+
+
+## Update the auto-clear countdown line (driven by the app each frame).
+func set_clear_status(text: String) -> void:
+	if _clear_status != null:
+		_clear_status.text = text
+
+
+## Populate the wall-background dropdown. `walls` is an ordered list of
+## { name, path } dictionaries (from WallLibrary); `current` is the selected row.
+func set_walls(walls: Array, current: int) -> void:
+	if _wall_opt == null:
+		return
+	_wall_opt.clear()
+	_wall_paths = PackedStringArray()
+	for w in walls:
+		_wall_opt.add_item(String(w.get("name", "Wall")))
+		_wall_paths.append(String(w.get("path", "")))
+	if current >= 0 and current < _wall_paths.size():
+		_wall_opt.select(current)
 
 
 ## Populate the aim-source dropdown and select the active one.
@@ -156,6 +194,14 @@ func _build_ui() -> void:
 	title_row.add_child(_advanced_check)
 	vbox.add_child(title_row)
 
+	# Wall background section (Simple)
+	vbox.add_child(_make_label("Wall"))
+	_wall_opt = OptionButton.new()
+	_wall_opt.item_selected.connect(_on_wall_selected)
+	vbox.add_child(_wall_opt)
+
+	vbox.add_child(HSeparator.new())
+
 	# Color section (Simple)
 	vbox.add_child(_make_label("Color"))
 	_color_btn = ColorPickerButton.new()
@@ -184,6 +230,25 @@ func _build_ui() -> void:
 	shape_row.add_child(_shape_opt)
 	vbox.add_child(shape_row)
 
+	# Output rate (Simple): master "how fast the paint comes out" multiplier.
+	var out_box := VBoxContainer.new()
+	var out_header := HBoxContainer.new()
+	var out_name := Label.new()
+	out_name.text = "Output"
+	out_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_output_label = Label.new()
+	_output_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	out_header.add_child(out_name)
+	out_header.add_child(_output_label)
+	out_box.add_child(out_header)
+	_output_slider = HSlider.new()
+	_output_slider.min_value = 0.1
+	_output_slider.max_value = 3.0
+	_output_slider.step = 0.05
+	_output_slider.value_changed.connect(_on_output_changed)
+	out_box.add_child(_output_slider)
+	vbox.add_child(out_box)
+
 	for spec in SLIDER_SPECS:
 		var row := _make_slider_row(spec)
 		vbox.add_child(row)
@@ -194,6 +259,16 @@ func _build_ui() -> void:
 	var reset_btn := _make_action_button("Reset nozzle", _on_reset_pressed)
 	vbox.add_child(reset_btn)
 	_advanced_nodes.append(reset_btn)
+
+	# Auto-clear section (Advanced).
+	var clear_box := _build_clear_section()
+	vbox.add_child(clear_box)
+	_advanced_nodes.append(clear_box)
+
+	# Vignette section (Advanced).
+	var vig_box := _build_vignette_section()
+	vbox.add_child(vig_box)
+	_advanced_nodes.append(vig_box)
 
 	# Aim source + tracker section (Advanced).
 	var tracker_box := _build_tracker_section()
@@ -220,6 +295,89 @@ func _build_ui() -> void:
 	hint.add_theme_font_size_override("font_size", 11)
 	hint.modulate = Color(1, 1, 1, 0.5)
 	vbox.add_child(hint)
+
+
+## Build the wall auto-clear block (mode + interval + countdown).
+func _build_clear_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+
+	box.add_child(HSeparator.new())
+	box.add_child(_make_label("Auto-clear"))
+
+	var mode_opt := OptionButton.new()
+	mode_opt.add_item("Manual")   # index 0 -> ClearMode.MANUAL
+	mode_opt.add_item("Timer")    # index 1 -> ClearMode.TIMER
+	mode_opt.item_selected.connect(func(i): clear_mode_changed.emit(i))
+	box.add_child(mode_opt)
+
+	var int_header := HBoxContainer.new()
+	var int_name := Label.new()
+	int_name.text = "Interval"
+	int_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_clear_interval_label = Label.new()
+	_clear_interval_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_clear_interval_label.text = "100s"
+	int_header.add_child(int_name)
+	int_header.add_child(_clear_interval_label)
+	box.add_child(int_header)
+
+	var int_slider := HSlider.new()
+	int_slider.min_value = 10.0
+	int_slider.max_value = 600.0
+	int_slider.step = 5.0
+	int_slider.value = 100.0
+	int_slider.value_changed.connect(_on_clear_interval_changed)
+	box.add_child(int_slider)
+
+	_clear_status = _make_label("")
+	_clear_status.modulate = Color(1, 1, 1, 0.6)
+	box.add_child(_clear_status)
+
+	return box
+
+
+## Build the vignette block (strength / extent / softness), darkening the brick
+## toward the edges. (property key, label, min, max, step, default)
+## Defaults mirror AppConfig.VIGNETTE_* (kept as literals so this stays a const).
+const VIGNETTE_SPECS := [
+	["strength", "Strength", 0.0, 1.0, 0.01, 0.0],
+	["extent", "Extent", 0.0, 1.2, 0.01, 0.7],
+	["softness", "Softness", 0.01, 1.0, 0.01, 0.4],
+]
+
+
+func _build_vignette_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.add_child(HSeparator.new())
+	box.add_child(_make_label("Vignette"))
+
+	for spec in VIGNETTE_SPECS:
+		var key: String = spec[0]
+		var header := HBoxContainer.new()
+		var name_label := Label.new()
+		name_label.text = String(spec[1])
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var value_label := Label.new()
+		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		value_label.text = "%.2f" % float(spec[5])
+		header.add_child(name_label)
+		header.add_child(value_label)
+		box.add_child(header)
+
+		var slider := HSlider.new()
+		slider.min_value = spec[2]
+		slider.max_value = spec[3]
+		slider.step = spec[4]
+		slider.value = spec[5]
+		slider.value_changed.connect(_on_vignette_changed)
+		box.add_child(slider)
+
+		_vig_sliders[key] = slider
+		_vig_labels[key] = value_label
+
+	return box
 
 
 ## Build the aim-source / OptiTrack block as one collapsible container.
@@ -410,8 +568,32 @@ func _on_nozzle_selected(idx: int) -> void:
 func _on_shape_selected(idx: int) -> void:
 	if _spray == null:
 		return
-	_spray.current_nozzle().shape = idx
+	_spray.current_nozzle().shape = idx as Nozzle.Shape
 	tool_changed.emit()
+
+
+func _on_output_changed(v: float) -> void:
+	if _spray != null:
+		_spray.output_rate = v
+	if _output_label != null:
+		_output_label.text = "%.2fx" % v
+
+
+func _on_clear_interval_changed(v: float) -> void:
+	if _clear_interval_label != null:
+		_clear_interval_label.text = "%ds" % int(v)
+	clear_interval_changed.emit(v)
+
+
+func _on_vignette_changed(_v: float) -> void:
+	for key in _vig_sliders.keys():
+		var label: Label = _vig_labels[key]
+		label.text = "%.2f" % float(_vig_sliders[key].value)
+	vignette_changed.emit(
+		float(_vig_sliders["strength"].value),
+		float(_vig_sliders["extent"].value),
+		float(_vig_sliders["softness"].value),
+	)
 
 
 func _on_reset_pressed() -> void:
@@ -426,6 +608,11 @@ func _on_advanced_toggled(on: bool) -> void:
 	_advanced = on
 	_apply_advanced_visibility()
 	_save_prefs()
+
+
+func _on_wall_selected(idx: int) -> void:
+	if idx >= 0 and idx < _wall_paths.size():
+		wall_selected.emit(_wall_paths[idx])
 
 
 func _on_aim_selected(idx: int) -> void:

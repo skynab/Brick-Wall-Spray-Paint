@@ -11,6 +11,14 @@ const PAINT_RESOLUTION := Vector2i(2048, 1152) # paint buffer pixels (16:9)
 ## Normalized cone distance where droplet opacity starts fading toward the rim.
 const SPRAY_EDGE_START := 0.65
 
+# --- Vignette (darkens the brick toward the edges, under the paint) ---
+## Peak darkening at the corners, 0 = off. Off by default; the operator dials it in.
+const VIGNETTE_STRENGTH := 0.0
+## Normalized radius (0 = centre, 1 = corner) where darkening begins.
+const VIGNETTE_EXTENT := 0.7
+## Width of the fade from clear to full darkening.
+const VIGNETTE_SOFTNESS := 0.4
+
 # --- Drips ---
 const MAX_ACTIVE_DRIPS := 64
 const DRIP_SPEED := 3.0            # px advanced per frame

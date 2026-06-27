@@ -20,6 +20,9 @@ const WALL_SHADER_PATH := "res://shaders/wall_paint.gdshader"
 var _mesh: MeshInstance3D
 var _quad_size: Vector2 = Vector2.ONE
 var _paint: PaintLayer
+var _material: ShaderMaterial
+## Path of the brick image currently shown (selectable at runtime).
+var _brick_path: String = BRICK_TEXTURE_PATH
 
 
 func _ready() -> void:
@@ -38,14 +41,12 @@ func _ready() -> void:
 	_paint.setup(paint_resolution)
 
 	# Composite brick + paint via the wall shader.
-	var brick_tex := load(BRICK_TEXTURE_PATH)
-	if brick_tex == null:
-		push_warning("Brick texture not found at %s — open the project in the editor once so it imports." % BRICK_TEXTURE_PATH)
-	var mat := ShaderMaterial.new()
-	mat.shader = load(WALL_SHADER_PATH)
-	mat.set_shader_parameter("brick_tex", brick_tex)
-	mat.set_shader_parameter("paint_tex", _paint.texture)
-	_mesh.material_override = mat
+	_material = ShaderMaterial.new()
+	_material.shader = load(WALL_SHADER_PATH)
+	_material.set_shader_parameter("paint_tex", _paint.texture)
+	_mesh.material_override = _material
+	set_brick_texture(_brick_path)
+	set_vignette(AppConfig.VIGNETTE_STRENGTH, AppConfig.VIGNETTE_EXTENT, AppConfig.VIGNETTE_SOFTNESS)
 
 
 ## The paint accumulation layer for this wall.
@@ -53,13 +54,63 @@ func get_paint_layer() -> PaintLayer:
 	return _paint
 
 
+## Swap the brick background image at runtime. Paint is unaffected (it lives in
+## a separate layer composited on top). `path` may be an imported res:// resource
+## or an absolute file path (external image loaded at runtime).
+func set_brick_texture(path: String) -> void:
+	var tex := _load_texture(path)
+	if tex == null:
+		push_warning("Could not load brick texture at %s" % path)
+		return
+	_brick_path = path
+	if _material != null:
+		_material.set_shader_parameter("brick_tex", tex)
+
+
+## Path of the brick image currently displayed.
+func current_brick_path() -> String:
+	return _brick_path
+
+
+## Set the vignette that darkens the brick toward the edges (under the paint).
+##   strength : peak corner darkening, 0 = off.
+##   extent   : normalized radius (0 centre .. 1 corner) where the fade begins.
+##   softness : width of the fade.
+func set_vignette(strength: float, extent: float, softness: float) -> void:
+	if _material == null:
+		return
+	_material.set_shader_parameter("vignette_strength", strength)
+	_material.set_shader_parameter("vignette_extent", extent)
+	_material.set_shader_parameter("vignette_softness", maxf(0.01, softness))
+
+
+func _is_resource_path(path: String) -> bool:
+	return path.begins_with("res://") or path.begins_with("user://")
+
+
+func _load_texture(path: String) -> Texture2D:
+	if _is_resource_path(path):
+		return load(path) as Texture2D
+	# External file beside the .exe: not imported, so load the raw image.
+	var img := Image.load_from_file(path)
+	if img == null:
+		return null
+	return ImageTexture.create_from_image(img)
+
+
+## The current brick image as an Image (for compositing / saving).
+func _brick_image() -> Image:
+	if _is_resource_path(_brick_path):
+		var t := load(_brick_path) as Texture2D
+		return t.get_image() if t != null else null
+	return Image.load_from_file(_brick_path)
+
+
 ## Build a flattened image of the wall as displayed: brick photo with the paint
 ## composited on top, at the paint resolution. Used for "save PNG".
 func composite_to_image() -> Image:
-	var brick_tex := load(BRICK_TEXTURE_PATH) as Texture2D
-	var img: Image
-	if brick_tex != null:
-		img = brick_tex.get_image()
+	var img := _brick_image()
+	if img != null:
 		img.resize(paint_resolution.x, paint_resolution.y)
 		img.convert(Image.FORMAT_RGBA8)
 	else:

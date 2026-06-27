@@ -32,6 +32,14 @@ var _calib_index := 0
 var _proximity_enabled := false
 var _proximity_threshold := AppConfig.PROXIMITY_DEFAULT_THRESHOLD
 
+# Wall clearing.
+##   MANUAL — only clears on the Clear button / [X].
+##   TIMER  — also auto-clears every `_clear_interval` seconds.
+enum ClearMode { MANUAL, TIMER }
+var _clear_mode := ClearMode.MANUAL
+var _clear_interval := 100.0
+var _clear_elapsed := 0.0
+
 
 func _ready() -> void:
 	print("App ready")
@@ -50,7 +58,12 @@ func _ready() -> void:
 		_menu.aim_asset_id_changed.connect(_on_asset_id_changed)
 		_menu.proximity_toggled.connect(func(on): _proximity_enabled = on)
 		_menu.proximity_threshold_changed.connect(func(v): _proximity_threshold = v)
+		_menu.clear_mode_changed.connect(_on_clear_mode_changed)
+		_menu.clear_interval_changed.connect(func(v): _clear_interval = v)
+		_menu.wall_selected.connect(_on_wall_selected)
+		_menu.vignette_changed.connect(_on_vignette_changed)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
+		_populate_walls()
 	_update_aim_status()
 	_report_state()
 
@@ -77,10 +90,11 @@ func _active_aim() -> AimSource:
 	return _aim_sources[_aim_index]
 
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	_handle_actions()
 	_handle_spray()
 	_update_cursor()
+	_update_clear_timer(delta)
 	# Keep the tracker's connection state visible while it's the active source.
 	if _active_aim() == _tracker:
 		_update_aim_status()
@@ -209,9 +223,64 @@ func _handle_actions() -> void:
 
 
 func _on_menu_clear() -> void:
+	_clear_wall("Wall cleared")
+
+
+# --- Wall background --------------------------------------------------------
+
+func _populate_walls() -> void:
+	if _menu == null or _wall == null:
+		return
+	var walls := WallLibrary.list_walls()
+	var current := 0
+	var active := _wall.current_brick_path()
+	for i in walls.size():
+		if String(walls[i].get("path", "")) == active:
+			current = i
+			break
+	_menu.set_walls(walls, current)
+
+
+func _on_wall_selected(path: String) -> void:
+	if _wall != null:
+		_wall.set_brick_texture(path)
+		print("Wall -> %s" % path)
+
+
+func _on_vignette_changed(strength: float, extent: float, softness: float) -> void:
+	if _wall != null:
+		_wall.set_vignette(strength, extent, softness)
+
+
+## Clear the wall, snapshotting first so it can be undone, and reset the
+## auto-clear countdown so a manual clear restarts the timer.
+func _clear_wall(reason: String) -> void:
+	if _paint == null:
+		return
 	_push_undo()
 	_paint.clear()
-	print("Wall cleared")
+	_clear_elapsed = 0.0
+	print(reason)
+
+
+# --- Auto-clear timer -------------------------------------------------------
+
+func _on_clear_mode_changed(mode: int) -> void:
+	_clear_mode = mode as ClearMode
+	_clear_elapsed = 0.0
+	if _menu != null and _clear_mode == ClearMode.MANUAL:
+		_menu.set_clear_status("")
+
+
+func _update_clear_timer(delta: float) -> void:
+	if _paint == null or _clear_mode != ClearMode.TIMER:
+		return
+	_clear_elapsed += delta
+	if _clear_elapsed >= _clear_interval:
+		_clear_wall("Auto-cleared (timer)")
+	if _menu != null:
+		var remaining := maxf(0.0, _clear_interval - _clear_elapsed)
+		_menu.set_clear_status("Clears in %ds" % int(ceil(remaining)))
 
 
 func _sync_menu() -> void:

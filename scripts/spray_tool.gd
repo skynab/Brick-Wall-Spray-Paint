@@ -31,6 +31,11 @@ var color_index: int = 0
 ## set to an arbitrary color from the menu's color picker.
 var active_color: Color = Color.WHITE
 
+## Master spray-rate multiplier ("how fast the paint comes out"), applied on top
+## of the active nozzle's flow. 1.0 = the nozzle's native rate. Global so it
+## persists across nozzle changes, like turning the can's pressure up or down.
+var output_rate: float = 1.0
+
 # Dwell tracking for heavy-buildup drips.
 var _last_center: Vector2 = Vector2.ZERO
 var _dwell: int = 0
@@ -95,8 +100,9 @@ func spray(paint_layer: PaintLayer, center_uv: Vector2) -> void:
 	var center := Vector2(center_uv.x * float(res.x - 1), center_uv.y * float(res.y - 1))
 	var spread := noz.radius_px * lerpf(0.15, 1.0, clampf(noz.scatter, 0.0, 1.0))
 	var rot := deg_to_rad(noz.angle)
+	var flow := maxi(1, int(round(noz.flow * output_rate)))
 
-	for i in noz.flow:
+	for i in flow:
 		# Shape the footprint in unit space, scale to the cone, then orient it.
 		var s := _sample_offset(noz.shape, maxf(noz.aspect, 1.0))
 		var off: Vector2 = s.pos
@@ -151,7 +157,7 @@ func _sample_offset(shape: int, aspect: float) -> Dictionary:
 ## Seed a drip when the spray lingers over one spot (heavy build-up). The drip
 ## starts at a random point inside the footprint so wide/line shapes drip across
 ## their whole width, not just from the centre.
-func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, center_uv: Vector2, col: Color, noz: Nozzle) -> void:
+func _update_dwell_drips(paint_layer: PaintLayer, center: Vector2, _center_uv: Vector2, col: Color, noz: Nozzle) -> void:
 	if center.distance_to(_last_center) < noz.radius_px * 0.5:
 		_dwell += 1
 	else:
