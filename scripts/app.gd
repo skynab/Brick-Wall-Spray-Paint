@@ -1,8 +1,9 @@
 extends Node3D
 
 ## Top-level wiring for the Brick Wall Spray Paint app.
-## Phase 4: spray tool + collapsible side menu, kept two-way in sync with the
-## keyboard. Nozzle/color switching, clear, multi-step undo, save-to-PNG.
+## Phase 7: spray tool + side menu + HUD, aiming behind an AimSource interface
+## (Mouse / OptiTrack Tracker), with 3-point wall calibration and an optional
+## proximity auto-spray trigger.
 
 const MAX_UNDO := 20
 
@@ -18,6 +19,16 @@ var _stroke_active := false
 
 var _aim_sources: Array[AimSource] = []
 var _aim_index := 0
+var _tracker: TrackerAimSource
+
+# Calibration flow state.
+const CORNER_NAMES := ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"]
+var _calibrating := false
+var _calib_index := 0
+
+# Proximity auto-spray trigger.
+var _proximity_enabled := false
+var _proximity_threshold := AppConfig.PROXIMITY_DEFAULT_THRESHOLD
 
 
 func _ready() -> void:
@@ -33,6 +44,10 @@ func _ready() -> void:
 		_menu.save_requested.connect(_save_png)
 		_menu.tool_changed.connect(_report_state)
 		_menu.aim_source_selected.connect(_set_aim)
+		_menu.calibrate_requested.connect(_start_calibration)
+		_menu.aim_asset_id_changed.connect(_on_asset_id_changed)
+		_menu.proximity_toggled.connect(func(on): _proximity_enabled = on)
+		_menu.proximity_threshold_changed.connect(func(v): _proximity_threshold = v)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
 	_update_aim_status()
 	_report_state()
@@ -41,7 +56,10 @@ func _ready() -> void:
 func _build_aim_sources() -> void:
 	_aim_sources.clear()
 	_aim_sources.append(MouseAimSource.new(_camera))
-	# Phase 7: _aim_sources.append(TrackerAimSource.new(<canister node>))
+	var ot := get_node_or_null(AppConfig.OPTITRACK_SINGLETON_PATH)
+	_tracker = TrackerAimSource.new(ot, _load_calibration())
+	_tracker.asset_id = AppConfig.DEFAULT_RIGID_BODY_ID
+	_aim_sources.append(_tracker)
 
 
 func _aim_labels() -> PackedStringArray:
@@ -60,6 +78,9 @@ func _active_aim() -> AimSource:
 func _process(_delta: float) -> void:
 	_handle_actions()
 	_handle_spray()
+	# Keep the tracker's connection state visible while it's the active source.
+	if _active_aim() == _tracker:
+		_update_aim_status()
 
 
 # --- Spraying ---------------------------------------------------------------
@@ -67,7 +88,14 @@ func _process(_delta: float) -> void:
 func _handle_spray() -> void:
 	if _paint == null:
 		return
-	if Input.is_action_pressed("spray"):
+
+	# During calibration, the spray button captures wall corners instead of painting.
+	if _calibrating:
+		if Input.is_action_just_pressed("spray"):
+			_capture_calibration_point()
+		return
+
+	if _should_spray():
 		# Don't paint while the pointer is interacting with the menu.
 		if _menu != null and _menu.is_pointing_at_menu():
 			_stroke_active = false
@@ -82,6 +110,16 @@ func _handle_spray() -> void:
 		_spray.spray(_paint, uv)
 	else:
 		_stroke_active = false
+
+
+## The spray trigger: keyboard/mouse, or proximity auto-spray when enabled and
+## the tracked canister is close enough to the wall.
+func _should_spray() -> bool:
+	if Input.is_action_pressed("spray"):
+		return true
+	if _proximity_enabled and _tracker != null and _tracker.is_active():
+		return _tracker.get_wall_distance() <= _proximity_threshold
+	return false
 
 
 func _aim_uv() -> Variant:
@@ -154,11 +192,81 @@ func _set_aim(idx: int) -> void:
 func _update_aim_status() -> void:
 	if _menu == null:
 		return
+	if _calibrating:
+		return  # calibration prompts own the status line
 	var src := _active_aim()
 	if src == null:
 		_menu.set_status("Aim: —")
 		return
-	_menu.set_status("Aim: %s (%s)" % [src.get_label(), "active" if src.is_active() else "inactive"])
+	var text := "Aim: %s (%s)" % [src.get_label(), "active" if src.is_active() else "inactive"]
+	if src == _tracker:
+		text += "  |  Calib: %s" % ("ok" if _tracker.is_calibrated() else "none")
+	_menu.set_status(text)
+
+
+# --- Tracker calibration ----------------------------------------------------
+
+func _start_calibration() -> void:
+	if _tracker == null:
+		return
+	if not _tracker.is_active():
+		_menu.set_status("Calibrate: tracker not connected")
+		return
+	# Make the tracker the active source so we can read the canister.
+	_set_aim(_aim_sources.find(_tracker))
+	_calibrating = true
+	_calib_index = 0
+	_prompt_calibration()
+
+
+func _prompt_calibration() -> void:
+	if _menu != null:
+		_menu.set_status("Calibrate (%d/3): touch %s, press [Space]" % [_calib_index + 1, CORNER_NAMES[_calib_index]])
+
+
+func _capture_calibration_point() -> void:
+	if _tracker == null:
+		return
+	if not _tracker.capture_corner(_calib_index):
+		_menu.set_status("Capture failed — is the rigid body streaming?")
+		return
+	_calib_index += 1
+	if _calib_index >= 3:
+		_finish_calibration()
+	else:
+		_prompt_calibration()
+
+
+func _finish_calibration() -> void:
+	_calibrating = false
+	var ok := _tracker.finalize_calibration()
+	if ok:
+		_save_calibration()
+	if _menu != null:
+		_menu.set_status("Calibration %s" % ("saved" if ok else "failed (degenerate)"))
+	_update_aim_status()
+
+
+func _on_asset_id_changed(id: int) -> void:
+	if _tracker != null:
+		_tracker.asset_id = id
+
+
+func _load_calibration() -> TrackerCalibration:
+	var path := AppConfig.TRACKER_CALIBRATION_PATH
+	if ResourceLoader.exists(path):
+		var res = ResourceLoader.load(path)
+		if res is TrackerCalibration:
+			return res
+	return TrackerCalibration.new()
+
+
+func _save_calibration() -> void:
+	if _tracker == null:
+		return
+	var err := ResourceSaver.save(_tracker.calibration, AppConfig.TRACKER_CALIBRATION_PATH)
+	if err != OK:
+		push_warning("Failed to save tracker calibration (%d)" % err)
 
 
 func _push_undo() -> void:

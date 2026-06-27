@@ -14,6 +14,11 @@ signal save_requested
 signal tool_changed
 ## Emitted when the user picks a different aim source.
 signal aim_source_selected(index: int)
+## Tracker controls.
+signal aim_asset_id_changed(id: int)
+signal calibrate_requested
+signal proximity_toggled(enabled: bool)
+signal proximity_threshold_changed(value: float)
 
 const PANEL_WIDTH := 320.0
 const SLIDE_TIME := 0.22
@@ -35,6 +40,7 @@ var _panel: PanelContainer
 var _color_btn: ColorPickerButton
 var _nozzle_opt: OptionButton
 var _aim_opt: OptionButton
+var _prox_value: Label
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
 var _slider_labels: Dictionary = {} # key -> Label
@@ -128,6 +134,51 @@ func _build_ui() -> void:
 	_aim_opt = OptionButton.new()
 	_aim_opt.item_selected.connect(_on_aim_selected)
 	vbox.add_child(_aim_opt)
+
+	# Tracker (OptiTrack) controls
+	var id_row := HBoxContainer.new()
+	var id_label := Label.new()
+	id_label.text = "Rigid Body ID"
+	id_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	id_row.add_child(id_label)
+	var spin := SpinBox.new()
+	spin.min_value = 0
+	spin.max_value = 9999
+	spin.step = 1
+	spin.value = 1
+	spin.value_changed.connect(func(v): aim_asset_id_changed.emit(int(v)))
+	id_row.add_child(spin)
+	vbox.add_child(id_row)
+
+	var calib_btn := Button.new()
+	calib_btn.text = "Calibrate wall (3 corners)"
+	calib_btn.pressed.connect(func(): calibrate_requested.emit())
+	vbox.add_child(calib_btn)
+
+	var prox_check := CheckBox.new()
+	prox_check.text = "Auto-spray near wall"
+	prox_check.toggled.connect(func(on): proximity_toggled.emit(on))
+	vbox.add_child(prox_check)
+
+	var prox_box := VBoxContainer.new()
+	var prox_header := HBoxContainer.new()
+	var prox_name := Label.new()
+	prox_name.text = "Proximity"
+	prox_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_prox_value = Label.new()
+	_prox_value.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_prox_value.text = "%.3f" % 0.05
+	prox_header.add_child(prox_name)
+	prox_header.add_child(_prox_value)
+	prox_box.add_child(prox_header)
+	var prox_slider := HSlider.new()
+	prox_slider.min_value = 0.01
+	prox_slider.max_value = 0.5
+	prox_slider.step = 0.005
+	prox_slider.value = 0.05
+	prox_slider.value_changed.connect(_on_prox_slider_changed)
+	prox_box.add_child(prox_slider)
+	vbox.add_child(prox_box)
 
 	vbox.add_child(HSeparator.new())
 
@@ -299,6 +350,12 @@ func _on_nozzle_selected(idx: int) -> void:
 
 func _on_aim_selected(idx: int) -> void:
 	aim_source_selected.emit(idx)
+
+
+func _on_prox_slider_changed(v: float) -> void:
+	if _prox_value != null:
+		_prox_value.text = "%.3f" % v
+	proximity_threshold_changed.emit(v)
 
 
 func _on_slider_changed(value: float, key: String, is_int: bool, value_label: Label) -> void:
