@@ -1,7 +1,8 @@
-[gd_scene load_steps=5 format=3 uid="uid://b1rckwallspray0"]
+[gd_scene load_steps=6 format=3 uid="uid://b1rckwallspray0"]
 
 [ext_resource type="Script" path="res://scripts/app.gd" id="1_app"]
 [ext_resource type="PackedScene" uid="uid://cbrickwall0wall" path="res://scenes/wall.tscn" id="2_wall"]
+[ext_resource type="PackedScene" uid="uid://csidemenu0ui01" path="res://scenes/ui/side_menu.tscn" id="3_menu"]
 
 [sub_resource type="Environment" id="Env_1"]
 background_mode = 0
@@ -26,3 +27,5 @@ shadow_enabled = false
 
 [node name="WorldEnvironment" type="WorldEnvironment" parent="."]
 environment = SubResource("Env_1")
+
+[node name="SideMenu" parent="." instance=ExtResource("3_menu")]

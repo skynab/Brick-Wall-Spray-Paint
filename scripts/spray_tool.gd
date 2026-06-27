@@ -22,6 +22,9 @@ var palette: Array[Color] = [
 	Color("ffffff"), # white
 ]
 var color_index: int = 0
+## The active paint color. Tracks the palette on index changes, but can also be
+## set to an arbitrary color from the menu's color picker.
+var active_color: Color = Color.WHITE
 
 
 func _init() -> void:
@@ -31,6 +34,7 @@ func _init() -> void:
 			nozzles.append(n)
 	if nozzles.is_empty():
 		nozzles.append(Nozzle.new()) # safety fallback
+	active_color = palette[color_index]
 
 
 func current_nozzle() -> Nozzle:
@@ -38,7 +42,7 @@ func current_nozzle() -> Nozzle:
 
 
 func current_color() -> Color:
-	return palette[color_index]
+	return active_color
 
 
 func cycle_nozzle() -> void:
@@ -47,11 +51,18 @@ func cycle_nozzle() -> void:
 
 func cycle_color() -> void:
 	color_index = (color_index + 1) % palette.size()
+	active_color = palette[color_index]
 
 
 func set_color_index(i: int) -> void:
 	if i >= 0 and i < palette.size():
 		color_index = i
+		active_color = palette[i]
+
+
+## Set an arbitrary active color (from the color picker).
+func set_color(c: Color) -> void:
+	active_color = c
 
 
 ## Emit one frame's worth of droplets around `center_uv` into the paint layer.
