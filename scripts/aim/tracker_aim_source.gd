@@ -19,6 +19,11 @@ var forward_axis: Vector3 = Vector3(0, 0, -1)
 var position_offset: Vector3 = Vector3.ZERO
 var calibration: TrackerCalibration
 
+# NatNet connection settings (applied to the plugin singleton, best-effort).
+var server_ip: String = "127.0.0.1"
+var client_ip: String = "127.0.0.1"
+var use_multicast: bool = true
+
 # Cached tracker-space -> virtual-wall-space linear map.
 var _linear: Basis = Basis()
 var _world_tl: Vector3 = Vector3.ZERO
@@ -34,6 +39,35 @@ func _init(optitrack_singleton: Node, calib: TrackerCalibration = null) -> void:
 
 func set_optitrack(node: Node) -> void:
 	optitrack = node
+
+
+## Apply NatNet connection settings and (re)connect. The exact plugin property /
+## method names aren't guaranteed, so each push is guarded — unknown ones are
+## skipped. With no plugin installed this just records the values for later.
+func configure(p_server_ip: String, p_client_ip: String, p_multicast: bool) -> void:
+	server_ip = p_server_ip
+	client_ip = p_client_ip
+	use_multicast = p_multicast
+	if optitrack == null:
+		return
+	_try_set(optitrack, "server_address", server_ip)
+	_try_set(optitrack, "client_address", client_ip)
+	_try_set(optitrack, "local_address", client_ip)
+	_try_set(optitrack, "use_multicast", use_multicast)
+	for m in ["connect_to_server", "start_connection", "connect_to_motive"]:
+		if optitrack.has_method(m):
+			optitrack.call(m)
+			break
+
+
+## Set a property on `obj` only if it actually exists (avoids plugin-version errors).
+func _try_set(obj, prop: String, value) -> void:
+	if obj == null:
+		return
+	for p in obj.get_property_list():
+		if p.get("name", "") == prop:
+			obj.set(prop, value)
+			return
 
 
 func is_active() -> bool:

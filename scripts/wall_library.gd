@@ -18,10 +18,10 @@ const BUNDLED_DIR := "res://assets/walls"
 ## is committed to assets/walls/ so it appears in exported builds too.
 ## Labels are auto-derived from the filename, e.g. "black_brick" -> "Black Brick".
 const BUNDLED_WALLS: Array[String] = [
-	"res://assets/walls/black_brick.jpg",
-	"res://assets/walls/warm_glow_brick.jpg",
-	"res://assets/walls/dark_aged_brick.jpg",
-	"res://assets/walls/new_red_brick.jpg",
+	"res://assets/walls/black_brick.png",
+	"res://assets/walls/warm_glow_brick.png",
+	"res://assets/walls/dark_aged_brick.png",
+	"res://assets/walls/new_red_brick.png",
 	"res://assets/walls/orange_weathered_brick.jpg",
 ]
 const IMAGE_EXTS := ["jpg", "jpeg", "png", "webp"]

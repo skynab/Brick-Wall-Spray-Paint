@@ -169,3 +169,30 @@ func _local_to_uv(local: Vector3) -> Vector2:
 	var u := local.x / _quad_size.x + 0.5
 	var v := 0.5 - local.y / _quad_size.y
 	return Vector2(u, v)
+
+
+## Intersect a world ray with the (infinite) wall plane and return the world hit
+## point, ignoring the face bounds. Null if the ray is parallel or points away.
+func ray_plane_world(origin: Vector3, direction: Vector3) -> Variant:
+	var inv := _mesh.global_transform.affine_inverse()
+	var lo := inv * origin
+	var ld := inv.basis * direction
+	if absf(ld.z) < 0.00000001:
+		return null
+	var t := -lo.z / ld.z
+	if t < 0.0:
+		return null
+	return _mesh.global_transform * (lo + ld * t)
+
+
+## The wall face's world-space axes: +X right, +Y up, +Z out toward the camera.
+func wall_right() -> Vector3:
+	return _mesh.global_transform.basis.x.normalized()
+
+
+func wall_up() -> Vector3:
+	return _mesh.global_transform.basis.y.normalized()
+
+
+func wall_normal() -> Vector3:
+	return _mesh.global_transform.basis.z.normalized()

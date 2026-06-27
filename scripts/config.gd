@@ -31,6 +31,7 @@ const DRIP_DWELL_SEED_CHANCE := 0.05
 # --- OptiTrack / tracker ---
 const OPTITRACK_SINGLETON_PATH := "/root/OptiTrack"
 const TRACKER_CALIBRATION_PATH := "user://tracker_calibration.tres"
+const TRACKER_SETTINGS_PATH := "user://tracker_settings.tres"
 const DEFAULT_RIGID_BODY_ID := 1
 ## Local axis of the canister rigid body that points out of the nozzle.
 const CANISTER_FORWARD_AXIS := Vector3(0, 0, -1)

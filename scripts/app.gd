@@ -21,7 +21,9 @@ var _stroke_active := false
 
 var _aim_sources: Array[AimSource] = []
 var _aim_index := 0
+var _mouse: MouseAimSource
 var _tracker: TrackerAimSource
+var _tracker_settings: TrackerSettings
 
 # Calibration flow state.
 const CORNER_NAMES := ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"]
@@ -56,13 +58,23 @@ func _ready() -> void:
 		_menu.aim_source_selected.connect(_set_aim)
 		_menu.calibrate_requested.connect(_start_calibration)
 		_menu.aim_asset_id_changed.connect(_on_asset_id_changed)
+		_menu.tracker_connect_requested.connect(_on_tracker_connect)
+		_menu.tracker_offset_changed.connect(_on_tracker_offset)
 		_menu.proximity_toggled.connect(func(on): _proximity_enabled = on)
 		_menu.proximity_threshold_changed.connect(func(v): _proximity_threshold = v)
 		_menu.clear_mode_changed.connect(_on_clear_mode_changed)
 		_menu.clear_interval_changed.connect(func(v): _clear_interval = v)
 		_menu.wall_selected.connect(_on_wall_selected)
 		_menu.vignette_changed.connect(_on_vignette_changed)
+		_menu.mouse_aim_changed.connect(_on_mouse_aim_changed)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
+		if _tracker_settings != null:
+			_menu.set_tracker_settings(
+				_tracker_settings.server_ip,
+				_tracker_settings.client_ip,
+				_tracker_settings.use_multicast,
+				_tracker_settings.position_offset,
+			)
 		_populate_walls()
 	_update_aim_status()
 	_report_state()
@@ -70,10 +82,14 @@ func _ready() -> void:
 
 func _build_aim_sources() -> void:
 	_aim_sources.clear()
-	_aim_sources.append(MouseAimSource.new(_camera))
+	_mouse = MouseAimSource.new(_camera, _wall)
+	_aim_sources.append(_mouse)
 	var ot := get_node_or_null(AppConfig.OPTITRACK_SINGLETON_PATH)
 	_tracker = TrackerAimSource.new(ot, _load_calibration())
 	_tracker.asset_id = AppConfig.DEFAULT_RIGID_BODY_ID
+	_tracker_settings = _load_tracker_settings()
+	_tracker.configure(_tracker_settings.server_ip, _tracker_settings.client_ip, _tracker_settings.use_multicast)
+	_tracker.position_offset = _tracker_settings.position_offset
 	_aim_sources.append(_tracker)
 
 
@@ -252,6 +268,13 @@ func _on_vignette_changed(strength: float, extent: float, softness: float) -> vo
 		_wall.set_vignette(strength, extent, softness)
 
 
+func _on_mouse_aim_changed(distance: float, pitch: float, yaw: float) -> void:
+	if _mouse != null:
+		_mouse.distance = distance
+		_mouse.pitch_deg = pitch
+		_mouse.yaw_deg = yaw
+
+
 ## Clear the wall, snapshotting first so it can be undone, and reset the
 ## auto-clear countdown so a manual clear restarts the timer.
 func _clear_wall(reason: String) -> void:
@@ -358,6 +381,45 @@ func _finish_calibration() -> void:
 func _on_asset_id_changed(id: int) -> void:
 	if _tracker != null:
 		_tracker.asset_id = id
+
+
+func _on_tracker_connect(server_ip: String, client_ip: String, multicast: bool) -> void:
+	if _tracker_settings == null:
+		_tracker_settings = TrackerSettings.new()
+	_tracker_settings.server_ip = server_ip
+	_tracker_settings.client_ip = client_ip
+	_tracker_settings.use_multicast = multicast
+	if _tracker != null:
+		_tracker.configure(server_ip, client_ip, multicast)
+	_save_tracker_settings()
+	_update_aim_status()
+	print("Tracker connect: server=%s client=%s %s" % [server_ip, client_ip, "multicast" if multicast else "unicast"])
+
+
+func _on_tracker_offset(offset: Vector3) -> void:
+	if _tracker_settings == null:
+		_tracker_settings = TrackerSettings.new()
+	_tracker_settings.position_offset = offset
+	if _tracker != null:
+		_tracker.position_offset = offset
+	_save_tracker_settings()
+
+
+func _load_tracker_settings() -> TrackerSettings:
+	var path := AppConfig.TRACKER_SETTINGS_PATH
+	if ResourceLoader.exists(path):
+		var res = ResourceLoader.load(path)
+		if res is TrackerSettings:
+			return res
+	return TrackerSettings.new()
+
+
+func _save_tracker_settings() -> void:
+	if _tracker_settings == null:
+		return
+	var err := ResourceSaver.save(_tracker_settings, AppConfig.TRACKER_SETTINGS_PATH)
+	if err != OK:
+		push_warning("Failed to save tracker settings (%d)" % err)
 
 
 func _load_calibration() -> TrackerCalibration:

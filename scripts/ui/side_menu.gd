@@ -16,6 +16,8 @@ signal tool_changed
 signal wall_selected(path: String)
 ## Emitted when any vignette control changes (carries all three current values).
 signal vignette_changed(strength: float, extent: float, softness: float)
+## Emitted when the mouse aim source's distance/pitch/yaw change.
+signal mouse_aim_changed(distance: float, pitch: float, yaw: float)
 ## Emitted when the user picks a different aim source.
 signal aim_source_selected(index: int)
 ## Tracker controls.
@@ -23,6 +25,9 @@ signal aim_asset_id_changed(id: int)
 signal calibrate_requested
 signal proximity_toggled(enabled: bool)
 signal proximity_threshold_changed(value: float)
+## OptiTrack / NatNet connection settings.
+signal tracker_connect_requested(server_ip: String, client_ip: String, multicast: bool)
+signal tracker_offset_changed(offset: Vector3)
 ## Wall auto-clear controls.
 signal clear_mode_changed(mode: int)
 signal clear_interval_changed(seconds: float)
@@ -62,7 +67,13 @@ var _clear_interval_label: Label
 var _clear_status: Label
 var _vig_sliders: Dictionary = {}       # key -> HSlider
 var _vig_labels: Dictionary = {}        # key -> Label
+var _mouse_sliders: Dictionary = {}     # key -> HSlider
+var _mouse_labels: Dictionary = {}      # key -> Label
 var _aim_opt: OptionButton
+var _server_ip_edit: LineEdit
+var _client_ip_edit: LineEdit
+var _multicast_opt: OptionButton
+var _offset_spins: Dictionary = {}      # "x"/"y"/"z" -> SpinBox
 var _prox_value: Label
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
@@ -277,10 +288,19 @@ func _build_ui() -> void:
 	vbox.add_child(vig_box)
 	_advanced_nodes.append(vig_box)
 
-	# Aim source + tracker section (Advanced).
-	var tracker_box := _build_tracker_section()
-	vbox.add_child(tracker_box)
-	_advanced_nodes.append(tracker_box)
+	# Mouse spray-source 3D placement (Advanced).
+	var mouse_box := _build_mouse_aim_section()
+	vbox.add_child(mouse_box)
+	_advanced_nodes.append(mouse_box)
+
+	# OptiTrack / tracker setup — always visible (not gated by Advanced), since
+	# the tracked canister is the app's primary input.
+	vbox.add_child(_build_optitrack_section())
+
+	# Proximity auto-spray (Advanced — niche).
+	var prox_box := _build_proximity_section()
+	vbox.add_child(prox_box)
+	_advanced_nodes.append(prox_box)
 
 	vbox.add_child(HSeparator.new())
 
@@ -387,16 +407,75 @@ func _build_vignette_section() -> VBoxContainer:
 	return box
 
 
-## Build the aim-source / OptiTrack block as one collapsible container.
-func _build_tracker_section() -> VBoxContainer:
+## Mouse spray-source placement controls. (key, label, min, max, step, default, unit)
+const MOUSE_AIM_SPECS := [
+	["distance", "Distance", 0.0, 2.5, 0.05, 0.0, " m"],
+	["pitch", "Pitch", -70.0, 70.0, 1.0, 0.0, "°"],
+	["yaw", "Yaw", -70.0, 70.0, 1.0, 0.0, "°"],
+]
+
+
+func _build_mouse_aim_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 8)
+	box.add_theme_constant_override("separation", 6)
+	box.add_child(HSeparator.new())
+	box.add_child(_make_label("Mouse aim (3D)"))
+
+	for spec in MOUSE_AIM_SPECS:
+		var key: String = spec[0]
+		var header := HBoxContainer.new()
+		var name_label := Label.new()
+		name_label.text = String(spec[1])
+		name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		var value_label := Label.new()
+		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		header.add_child(name_label)
+		header.add_child(value_label)
+		box.add_child(header)
+
+		var slider := HSlider.new()
+		slider.min_value = spec[2]
+		slider.max_value = spec[3]
+		slider.step = spec[4]
+		slider.value = spec[5]
+		slider.value_changed.connect(_on_mouse_aim_changed)
+		box.add_child(slider)
+
+		_mouse_sliders[key] = slider
+		_mouse_labels[key] = value_label
+		_update_mouse_label(key)
+
+	box.add_child(_make_action_button("Reset placement", _on_mouse_aim_reset))
+	return box
+
+
+## Always-visible OptiTrack setup: aim source, NatNet connection, rigid body,
+## origin offset, connect + calibrate.
+func _build_optitrack_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
 
 	box.add_child(HSeparator.new())
+	box.add_child(_make_title("OPTITRACK"))
+
 	box.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()
 	_aim_opt.item_selected.connect(_on_aim_selected)
 	box.add_child(_aim_opt)
+
+	_server_ip_edit = _make_ip_row(box, "Server IP", "127.0.0.1")
+	_client_ip_edit = _make_ip_row(box, "Client IP", "127.0.0.1")
+
+	var conn_row := HBoxContainer.new()
+	var conn_label := Label.new()
+	conn_label.text = "Connection"
+	conn_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	conn_row.add_child(conn_label)
+	_multicast_opt = OptionButton.new()
+	_multicast_opt.add_item("Multicast")  # index 0 -> multicast
+	_multicast_opt.add_item("Unicast")    # index 1 -> unicast
+	conn_row.add_child(_multicast_opt)
+	box.add_child(conn_row)
 
 	var id_row := HBoxContainer.new()
 	var id_label := Label.new()
@@ -412,17 +491,56 @@ func _build_tracker_section() -> VBoxContainer:
 	id_row.add_child(spin)
 	box.add_child(id_row)
 
-	var calib_btn := Button.new()
-	calib_btn.text = "Calibrate wall (3 corners)"
-	calib_btn.pressed.connect(func(): calibrate_requested.emit())
-	box.add_child(calib_btn)
+	box.add_child(_make_action_button("Connect", _on_connect_pressed))
+
+	# Manual origin offset (X / Y / Z) for the tracker data.
+	box.add_child(_make_label("Origin offset (m)"))
+	var off_row := HBoxContainer.new()
+	off_row.add_theme_constant_override("separation", 4)
+	for axis in ["x", "y", "z"]:
+		var s := SpinBox.new()
+		s.min_value = -100.0
+		s.max_value = 100.0
+		s.step = 0.01
+		s.value = 0.0
+		s.prefix = axis.to_upper() + " "
+		s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		s.value_changed.connect(_on_offset_changed)
+		off_row.add_child(s)
+		_offset_spins[axis] = s
+	box.add_child(off_row)
+
+	box.add_child(_make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit()))
+	return box
+
+
+## Build a labeled IP-address text field row and return its LineEdit.
+func _make_ip_row(parent: VBoxContainer, label_text: String, default_ip: String) -> LineEdit:
+	var row := HBoxContainer.new()
+	var label := Label.new()
+	label.text = label_text
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+	var edit := LineEdit.new()
+	edit.text = default_ip
+	edit.placeholder_text = "127.0.0.1"
+	edit.custom_minimum_size = Vector2(130, 0)
+	row.add_child(edit)
+	parent.add_child(row)
+	return edit
+
+
+## Proximity auto-spray block (Advanced).
+func _build_proximity_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.add_child(HSeparator.new())
 
 	var prox_check := CheckBox.new()
 	prox_check.text = "Auto-spray near wall"
 	prox_check.toggled.connect(func(on): proximity_toggled.emit(on))
 	box.add_child(prox_check)
 
-	var prox_box := VBoxContainer.new()
 	var prox_header := HBoxContainer.new()
 	var prox_name := Label.new()
 	prox_name.text = "Proximity"
@@ -432,15 +550,14 @@ func _build_tracker_section() -> VBoxContainer:
 	_prox_value.text = "%.3f" % 0.05
 	prox_header.add_child(prox_name)
 	prox_header.add_child(_prox_value)
-	prox_box.add_child(prox_header)
+	box.add_child(prox_header)
 	var prox_slider := HSlider.new()
 	prox_slider.min_value = 0.01
 	prox_slider.max_value = 0.5
 	prox_slider.step = 0.005
 	prox_slider.value = 0.05
 	prox_slider.value_changed.connect(_on_prox_slider_changed)
-	prox_box.add_child(prox_slider)
-	box.add_child(prox_box)
+	box.add_child(prox_slider)
 
 	return box
 
@@ -603,6 +720,42 @@ func _on_vignette_changed(_v: float) -> void:
 	)
 
 
+func _on_mouse_aim_changed(_v: float) -> void:
+	for key in _mouse_sliders.keys():
+		_update_mouse_label(key)
+	_emit_mouse_aim()
+
+
+func _on_mouse_aim_reset() -> void:
+	for spec in MOUSE_AIM_SPECS:
+		var slider: HSlider = _mouse_sliders[spec[0]]
+		slider.set_value_no_signal(float(spec[5]))
+		_update_mouse_label(spec[0])
+	_emit_mouse_aim()
+
+
+func _emit_mouse_aim() -> void:
+	mouse_aim_changed.emit(
+		float(_mouse_sliders["distance"].value),
+		float(_mouse_sliders["pitch"].value),
+		float(_mouse_sliders["yaw"].value),
+	)
+
+
+func _update_mouse_label(key: String) -> void:
+	var slider: HSlider = _mouse_sliders[key]
+	var label: Label = _mouse_labels[key]
+	var unit := ""
+	for spec in MOUSE_AIM_SPECS:
+		if spec[0] == key:
+			unit = String(spec[6])
+			break
+	if key == "distance":
+		label.text = "%.2f%s" % [slider.value, unit]
+	else:
+		label.text = "%d%s" % [int(round(slider.value)), unit]
+
+
 func _on_reset_pressed() -> void:
 	if _spray == null:
 		return
@@ -624,6 +777,38 @@ func _on_wall_selected(idx: int) -> void:
 
 func _on_aim_selected(idx: int) -> void:
 	aim_source_selected.emit(idx)
+
+
+func _on_connect_pressed() -> void:
+	if _server_ip_edit == null:
+		return
+	tracker_connect_requested.emit(
+		_server_ip_edit.text,
+		_client_ip_edit.text,
+		_multicast_opt.selected == 0,
+	)
+
+
+func _on_offset_changed(_v: float) -> void:
+	tracker_offset_changed.emit(Vector3(
+		float(_offset_spins["x"].value),
+		float(_offset_spins["y"].value),
+		float(_offset_spins["z"].value),
+	))
+
+
+## Initialize the OptiTrack controls from persisted settings (no signals fired).
+func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool, offset: Vector3) -> void:
+	if _server_ip_edit != null:
+		_server_ip_edit.text = server_ip
+	if _client_ip_edit != null:
+		_client_ip_edit.text = client_ip
+	if _multicast_opt != null:
+		_multicast_opt.select(0 if multicast else 1)
+	if _offset_spins.has("x"):
+		_offset_spins["x"].set_value_no_signal(offset.x)
+		_offset_spins["y"].set_value_no_signal(offset.y)
+		_offset_spins["z"].set_value_no_signal(offset.z)
 
 
 func _on_prox_slider_changed(v: float) -> void:
