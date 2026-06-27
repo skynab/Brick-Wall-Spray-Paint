@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="Nozzle" load_steps=2 format=3 uid="uid://cnozsplatter01"]
+
+[ext_resource type="Script" path="res://scripts/nozzles/nozzle.gd" id="1_nozzle"]
+
+[resource]
+script = ExtResource("1_nozzle")
+nozzle_name = "Splatter"
+radius_px = 90.0
+flow = 6
+scatter = 1.0
+droplet_size_px = 16.0
+softness = 0.3
+build_rate = 0.12
+drip_chance = 0.0

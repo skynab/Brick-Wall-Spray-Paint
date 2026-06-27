@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="Nozzle" load_steps=2 format=3 uid="uid://cnozfinecap01"]
+
+[ext_resource type="Script" path="res://scripts/nozzles/nozzle.gd" id="1_nozzle"]
+
+[resource]
+script = ExtResource("1_nozzle")
+nozzle_name = "Fine Cap"
+radius_px = 28.0
+flow = 10
+scatter = 0.35
+droplet_size_px = 5.0
+softness = 0.5
+build_rate = 0.18
+drip_chance = 0.0

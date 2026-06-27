@@ -50,6 +50,23 @@ func get_paint_layer() -> PaintLayer:
 	return _paint
 
 
+## Build a flattened image of the wall as displayed: brick photo with the paint
+## composited on top, at the paint resolution. Used for "save PNG".
+func composite_to_image() -> Image:
+	var brick_tex := load(BRICK_TEXTURE_PATH) as Texture2D
+	var img: Image
+	if brick_tex != null:
+		img = brick_tex.get_image()
+		img.resize(paint_resolution.x, paint_resolution.y)
+		img.convert(Image.FORMAT_RGBA8)
+	else:
+		img = Image.create(paint_resolution.x, paint_resolution.y, false, Image.FORMAT_RGBA8)
+		img.fill(Color(0.1, 0.1, 0.1, 1.0))
+	# alpha-over the paint buffer onto the brick.
+	img.blend_rect(_paint.image, Rect2i(Vector2i.ZERO, paint_resolution), Vector2i.ZERO)
+	return img
+
+
 ## World-space size (width, height) of the wall face, in metres.
 func world_size() -> Vector2:
 	return _quad_size

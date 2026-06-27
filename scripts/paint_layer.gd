@@ -25,6 +25,10 @@ func _process(_delta: float) -> void:
 		_dirty = false
 
 
+func get_resolution() -> Vector2i:
+	return _resolution
+
+
 ## Blend a single soft circular dab into the buffer.
 ##   center_uv : hit point in [0,1] wall UV space.
 ##   color     : paint color (alpha ignored; opacity controls strength).

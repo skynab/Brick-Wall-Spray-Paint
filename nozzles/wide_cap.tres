@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="Nozzle" load_steps=2 format=3 uid="uid://cnozwidecap01"]
+
+[ext_resource type="Script" path="res://scripts/nozzles/nozzle.gd" id="1_nozzle"]
+
+[resource]
+script = ExtResource("1_nozzle")
+nozzle_name = "Wide Cap"
+radius_px = 110.0
+flow = 18
+scatter = 0.9
+droplet_size_px = 14.0
+softness = 0.9
+build_rate = 0.05
+drip_chance = 0.0
