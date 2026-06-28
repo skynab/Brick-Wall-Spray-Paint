@@ -3,9 +3,11 @@ class_name AppConfig
 
 ## Single place for the app's tunable constants.
 
-# --- Wall / paint surface ---
+# --- Wall / paint surface (defaults; overridden at runtime by WallConfig) ---
 const WALL_SIZE := Vector2(7.1111, 4.0)        # metres (16:9)
 const PAINT_RESOLUTION := Vector2i(2048, 1152) # paint buffer pixels (16:9)
+## Persisted physical + pixel wall dimensions.
+const WALL_CONFIG_PATH := "user://wall_config.tres"
 
 # --- Spray feathering ---
 ## Normalized cone distance where droplet opacity starts fading toward the rim.

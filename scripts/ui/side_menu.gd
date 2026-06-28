@@ -16,6 +16,8 @@ signal tool_changed
 signal drips_toggled(enabled: bool)
 ## Emitted when the user picks a different brick-wall background.
 signal wall_selected(path: String)
+## Emitted (on Apply) with the wall's physical size (m) and pixel resolution.
+signal wall_dimensions_changed(physical_size: Vector2, resolution: Vector2i)
 ## Emitted when any vignette control changes (carries all three current values).
 signal vignette_changed(strength: float, extent: float, softness: float)
 ## Emitted when the mouse aim source's distance/pitch/yaw/roll change.
@@ -75,6 +77,10 @@ var _server_ip_edit: LineEdit
 var _client_ip_edit: LineEdit
 var _multicast_opt: OptionButton
 var _offset_spins: Dictionary = {}      # "x"/"y"/"z" -> SpinBox
+var _phys_w: SpinBox
+var _phys_h: SpinBox
+var _res_w: SpinBox
+var _res_h: SpinBox
 var _prox_value: Label
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
@@ -298,6 +304,10 @@ func _build_ui() -> void:
 	vbox.add_child(mouse_box)
 	_advanced_nodes.append(mouse_box)
 
+	# Wall dimensions (physical + pixels) — always visible; core to mapping the
+	# render onto the real LED wall.
+	vbox.add_child(_build_wall_size_section())
+
 	# OptiTrack / tracker setup — always visible (not gated by Advanced), since
 	# the tracked canister is the app's primary input.
 	vbox.add_child(_build_optitrack_section())
@@ -450,6 +460,52 @@ func _build_mouse_aim_section() -> VBoxContainer:
 
 	box.add_child(_make_action_button("Reset placement", _on_mouse_aim_reset))
 	return box
+
+
+## Always-visible wall-dimensions setup: physical size (m) + pixel resolution.
+## Applied on the Apply button (changing resolution reallocates / clears paint).
+func _build_wall_size_section() -> VBoxContainer:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	box.add_child(_make_section_header("Wall size"))
+
+	box.add_child(_make_label("Physical (m)"))
+	var phys_row := HBoxContainer.new()
+	phys_row.add_theme_constant_override("separation", 4)
+	_phys_w = _make_dim_spin(0.1, 1000.0, 0.01, 7.1111, "W ")
+	_phys_h = _make_dim_spin(0.1, 1000.0, 0.01, 4.0, "H ")
+	phys_row.add_child(_phys_w)
+	phys_row.add_child(_phys_h)
+	box.add_child(phys_row)
+
+	box.add_child(_make_label("Resolution (px)"))
+	var res_row := HBoxContainer.new()
+	res_row.add_theme_constant_override("separation", 4)
+	_res_w = _make_dim_spin(16, 16384, 1, 2048, "W ")
+	_res_h = _make_dim_spin(16, 16384, 1, 1152, "H ")
+	res_row.add_child(_res_w)
+	res_row.add_child(_res_h)
+	box.add_child(res_row)
+
+	box.add_child(_make_action_button("Apply size", _on_wall_apply))
+
+	var note := _make_label("Match physical & pixel aspect. Changing resolution clears paint.")
+	note.add_theme_font_size_override("font_size", 11)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	note.modulate = Color(1, 1, 1, 0.5)
+	box.add_child(note)
+	return box
+
+
+func _make_dim_spin(min_v: float, max_v: float, step: float, value: float, prefix: String) -> SpinBox:
+	var s := SpinBox.new()
+	s.min_value = min_v
+	s.max_value = max_v
+	s.step = step
+	s.value = value
+	s.prefix = prefix
+	s.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	return s
 
 
 ## Always-visible OptiTrack setup: aim source, NatNet connection, rigid body,
@@ -800,6 +856,24 @@ func _on_wall_selected(idx: int) -> void:
 
 func _on_aim_selected(idx: int) -> void:
 	aim_source_selected.emit(idx)
+
+
+func _on_wall_apply() -> void:
+	if _phys_w == null:
+		return
+	wall_dimensions_changed.emit(
+		Vector2(_phys_w.value, _phys_h.value),
+		Vector2i(int(_res_w.value), int(_res_h.value)),
+	)
+
+
+## Initialize the wall-dimension controls (no signals fired).
+func set_wall_dimensions(physical_size: Vector2, resolution: Vector2i) -> void:
+	if _phys_w != null:
+		_phys_w.set_value_no_signal(physical_size.x)
+		_phys_h.set_value_no_signal(physical_size.y)
+		_res_w.set_value_no_signal(resolution.x)
+		_res_h.set_value_no_signal(resolution.y)
 
 
 func _on_connect_pressed() -> void:

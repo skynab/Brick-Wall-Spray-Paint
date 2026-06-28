@@ -16,6 +16,7 @@ const MAX_UNDO := 20
 
 var _paint: PaintLayer
 var _spray: SprayTool
+var _wall_config: WallConfig
 var _undo_stack: Array[Image] = []
 var _stroke_active := false
 
@@ -46,7 +47,9 @@ var _clear_elapsed := 0.0
 func _ready() -> void:
 	print("App ready")
 	_spray = SprayTool.new()
+	_wall_config = _load_wall_config()
 	if _wall != null:
+		_wall.apply_dimensions(_wall_config.physical_size, _wall_config.resolution)
 		_paint = _wall.get_paint_layer()
 	_build_aim_sources()
 	if _menu != null:
@@ -68,7 +71,10 @@ func _ready() -> void:
 		_menu.vignette_changed.connect(_on_vignette_changed)
 		_menu.mouse_aim_changed.connect(_on_mouse_aim_changed)
 		_menu.drips_toggled.connect(func(on): _spray.drips_enabled = on)
+		_menu.wall_dimensions_changed.connect(_on_wall_dimensions_changed)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
+		if _wall_config != null:
+			_menu.set_wall_dimensions(_wall_config.physical_size, _wall_config.resolution)
 		if _tracker_settings != null:
 			_menu.set_tracker_settings(
 				_tracker_settings.server_ip,
@@ -77,8 +83,28 @@ func _ready() -> void:
 				_tracker_settings.position_offset,
 			)
 		_populate_walls()
+	_frame_camera()
+	get_viewport().size_changed.connect(_frame_camera)
 	_update_aim_status()
 	_report_state()
+
+
+## Position the camera so the whole wall fits the view, whatever its physical
+## size/aspect. The wall shader is unshaded, so distance only affects framing.
+func _frame_camera() -> void:
+	if _camera == null or _wall == null:
+		return
+	var size := _wall.physical_size()
+	if size.x <= 0.0 or size.y <= 0.0:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	var view_aspect := (vp.x / vp.y) if vp.y > 0.0 else (16.0 / 9.0)
+	var t := tan(deg_to_rad(_camera.fov * 0.5))  # fov is vertical (KEEP_HEIGHT)
+	if t <= 0.0:
+		return
+	var dist_h := (size.y * 0.5) / t                    # fit height
+	var dist_w := (size.x * 0.5) / (t * view_aspect)    # fit width
+	_camera.position = Vector3(0.0, 0.0, maxf(dist_h, dist_w) * 1.02)
 
 
 func _build_aim_sources() -> void:
@@ -91,6 +117,8 @@ func _build_aim_sources() -> void:
 	_tracker_settings = _load_tracker_settings()
 	_tracker.configure(_tracker_settings.server_ip, _tracker_settings.client_ip, _tracker_settings.use_multicast)
 	_tracker.position_offset = _tracker_settings.position_offset
+	if _wall_config != null:
+		_tracker.set_wall_size(_wall_config.physical_size)
 	_aim_sources.append(_tracker)
 
 
@@ -409,6 +437,44 @@ func _on_tracker_offset(offset: Vector3) -> void:
 	if _tracker != null:
 		_tracker.position_offset = offset
 	_save_tracker_settings()
+
+
+## Apply new physical/pixel wall dimensions: resize the quad, reallocate the
+## paint buffer (clearing the wall), update the tracker mapping, and persist.
+func _on_wall_dimensions_changed(physical_size: Vector2, resolution: Vector2i) -> void:
+	if _wall_config == null:
+		_wall_config = WallConfig.new()
+	var res_changed := resolution != _wall_config.resolution
+	_wall_config.physical_size = physical_size
+	_wall_config.resolution = resolution
+	if _wall != null:
+		_wall.apply_dimensions(physical_size, resolution)
+		_paint = _wall.get_paint_layer()
+	if _tracker != null:
+		_tracker.set_wall_size(physical_size)
+	_frame_camera()
+	if res_changed:
+		# Old snapshots are a different size and can't be restored into the new buffer.
+		_undo_stack.clear()
+	_save_wall_config()
+	print("Wall: %.3f x %.3f m, %d x %d px" % [physical_size.x, physical_size.y, resolution.x, resolution.y])
+
+
+func _load_wall_config() -> WallConfig:
+	var path := AppConfig.WALL_CONFIG_PATH
+	if ResourceLoader.exists(path):
+		var res = ResourceLoader.load(path)
+		if res is WallConfig:
+			return res
+	return WallConfig.new()
+
+
+func _save_wall_config() -> void:
+	if _wall_config == null:
+		return
+	var err := ResourceSaver.save(_wall_config, AppConfig.WALL_CONFIG_PATH)
+	if err != OK:
+		push_warning("Failed to save wall config (%d)" % err)
 
 
 func _load_tracker_settings() -> TrackerSettings:

@@ -18,6 +18,8 @@ var asset_id: int = 1
 var forward_axis: Vector3 = Vector3(0, 0, -1)
 var position_offset: Vector3 = Vector3.ZERO
 var calibration: TrackerCalibration
+## Physical wall size (metres) the tracker space is mapped onto.
+var wall_size: Vector2 = AppConfig.WALL_SIZE
 
 # NatNet connection settings (applied to the plugin singleton, best-effort).
 var server_ip: String = "127.0.0.1"
@@ -39,6 +41,12 @@ func _init(optitrack_singleton: Node, calib: TrackerCalibration = null) -> void:
 
 func set_optitrack(node: Node) -> void:
 	optitrack = node
+
+
+## Update the physical wall size and rebuild the tracker -> wall mapping.
+func set_wall_size(size: Vector2) -> void:
+	wall_size = size
+	recompute()
 
 
 ## Apply NatNet connection settings and (re)connect. The exact plugin property /
@@ -136,8 +144,8 @@ func recompute() -> void:
 	_mapped = false
 	if calibration == null or not calibration.calibrated or calibration.corners.size() < 3:
 		return
-	var w := AppConfig.WALL_SIZE.x
-	var h := AppConfig.WALL_SIZE.y
+	var w := wall_size.x
+	var h := wall_size.y
 	_world_tl = Vector3(-w * 0.5, h * 0.5, 0.0)
 	# Virtual wall basis spanning the face (+U right, +V down, N out-of-plane).
 	var world_u := Vector3(w, 0, 0)

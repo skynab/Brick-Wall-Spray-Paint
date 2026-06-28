@@ -54,6 +54,32 @@ func get_paint_layer() -> PaintLayer:
 	return _paint
 
 
+## Set the wall's physical size (metres) and pixel resolution at runtime. The
+## quad is resized to the physical size; if the resolution changed, the paint
+## buffer is reallocated (which clears it).
+func apply_dimensions(physical_size: Vector2, resolution: Vector2i) -> void:
+	var qm := _mesh.mesh as QuadMesh
+	if qm != null and physical_size.x > 0.0 and physical_size.y > 0.0:
+		qm.size = physical_size
+		_quad_size = qm.size
+	if resolution.x >= 16 and resolution.y >= 16 and resolution != paint_resolution:
+		paint_resolution = resolution
+		if _paint != null:
+			_paint.setup(paint_resolution)
+			if _material != null:
+				_material.set_shader_parameter("paint_tex", _paint.texture)
+
+
+## Current physical wall size in metres.
+func physical_size() -> Vector2:
+	return _quad_size
+
+
+## Current paint-buffer resolution in pixels.
+func resolution() -> Vector2i:
+	return paint_resolution
+
+
 ## Swap the brick background image at runtime. Paint is unaffected (it lives in
 ## a separate layer composited on top). `path` may be an imported res:// resource
 ## or an absolute file path (external image loaded at runtime).
