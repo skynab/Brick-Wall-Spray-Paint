@@ -72,6 +72,7 @@ func _ready() -> void:
 		_menu.mouse_aim_changed.connect(_on_mouse_aim_changed)
 		_menu.drips_toggled.connect(func(on): _spray.drips_enabled = on)
 		_menu.wall_dimensions_changed.connect(_on_wall_dimensions_changed)
+		_menu.fullscreen_toggled.connect(_set_fullscreen)
 		_menu.set_aim_sources(_aim_labels(), _aim_index)
 		if _wall_config != null:
 			_menu.set_wall_dimensions(_wall_config.physical_size, _wall_config.resolution)
@@ -87,6 +88,19 @@ func _ready() -> void:
 	get_viewport().size_changed.connect(_frame_camera)
 	_update_aim_status()
 	_report_state()
+
+
+## Borderless fullscreen on the current monitor (so the render fills the LED
+## wall) vs. a normal window. The viewport size_changed signal reframes the camera.
+func _set_fullscreen(on: bool) -> void:
+	get_window().mode = Window.MODE_FULLSCREEN if on else Window.MODE_WINDOWED
+
+
+func _toggle_fullscreen() -> void:
+	var on := get_window().mode != Window.MODE_FULLSCREEN
+	_set_fullscreen(on)
+	if _menu != null:
+		_menu.set_fullscreen(on)
 
 
 ## Position the camera so the whole wall fits the view, whatever its physical
@@ -255,6 +269,8 @@ func _handle_actions() -> void:
 	if Input.is_action_just_pressed("toggle_cursor"):
 		if _cursor != null:
 			_cursor.toggle()
+	if Input.is_action_just_pressed("toggle_fullscreen"):
+		_toggle_fullscreen()
 	if Input.is_action_just_pressed("cycle_aim"):
 		if _aim_sources.size() > 1:
 			_set_aim((_aim_index + 1) % _aim_sources.size())

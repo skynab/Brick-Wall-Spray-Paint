@@ -18,6 +18,8 @@ signal drips_toggled(enabled: bool)
 signal wall_selected(path: String)
 ## Emitted (on Apply) with the wall's physical size (m) and pixel resolution.
 signal wall_dimensions_changed(physical_size: Vector2, resolution: Vector2i)
+## Emitted when the fullscreen toggle changes.
+signal fullscreen_toggled(enabled: bool)
 ## Emitted when any vignette control changes (carries all three current values).
 signal vignette_changed(strength: float, extent: float, softness: float)
 ## Emitted when the mouse aim source's distance/pitch/yaw/roll change.
@@ -81,6 +83,7 @@ var _phys_w: SpinBox
 var _phys_h: SpinBox
 var _res_w: SpinBox
 var _res_h: SpinBox
+var _fullscreen_check: CheckButton
 var _prox_value: Label
 var _status: Label
 var _sliders: Dictionary = {}       # key -> HSlider
@@ -489,6 +492,11 @@ func _build_wall_size_section() -> VBoxContainer:
 
 	box.add_child(_make_action_button("Apply size", _on_wall_apply))
 
+	_fullscreen_check = CheckButton.new()
+	_fullscreen_check.text = "Fullscreen (this monitor)"
+	_fullscreen_check.toggled.connect(func(on): fullscreen_toggled.emit(on))
+	box.add_child(_fullscreen_check)
+
 	var note := _make_label("Match physical & pixel aspect. Changing resolution clears paint.")
 	note.add_theme_font_size_override("font_size", 11)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -865,6 +873,13 @@ func _on_wall_apply() -> void:
 		Vector2(_phys_w.value, _phys_h.value),
 		Vector2i(int(_res_w.value), int(_res_h.value)),
 	)
+
+
+## Reflect the fullscreen state in the checkbox without re-emitting (e.g. when
+## toggled by the keyboard).
+func set_fullscreen(on: bool) -> void:
+	if _fullscreen_check != null:
+		_fullscreen_check.set_pressed_no_signal(on)
 
 
 ## Initialize the wall-dimension controls (no signals fired).

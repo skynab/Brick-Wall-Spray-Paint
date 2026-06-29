@@ -44,6 +44,7 @@ at installations and interactive exhibits.
 | Toggle spray cursor | `V` |
 | Switch aim (Mouse/Tracker) | `T` |
 | Projection calibration | `P` |
+| Toggle fullscreen | `F11` |
 | Quit | `Esc` |
 
 Saved images go to the Godot `user://` data folder.
