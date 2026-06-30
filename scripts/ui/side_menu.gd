@@ -519,6 +519,7 @@ func _build_wall_size_section() -> VBoxContainer:
 	content.add_child(res_row)
 
 	content.add_child(_make_action_button("Apply size", _on_wall_apply))
+	content.add_child(_make_action_button("Match res → wall aspect", _on_match_resolution))
 
 	_fullscreen_check = CheckButton.new()
 	_fullscreen_check.text = "Fullscreen (this monitor)"
@@ -958,6 +959,24 @@ func _on_wall_apply() -> void:
 	wall_dimensions_changed.emit(
 		Vector2(_phys_w.value, _phys_h.value),
 		Vector2i(int(_res_w.value), int(_res_h.value)),
+	)
+
+
+## Snap the pixel resolution to the current physical-wall aspect (keeps width,
+## recomputes height) and apply. Uses whatever physical size is currently set, so
+## it works off a calibration result or hand-entered dimensions alike — letting
+## fullscreen fill the wall without stretching.
+func _on_match_resolution() -> void:
+	if _phys_w == null or _phys_h == null or _res_w == null or _res_h == null:
+		return
+	if _phys_h.value <= 0.0:
+		return
+	var aspect := _phys_w.value / _phys_h.value
+	var new_h := clampi(roundi(_res_w.value / aspect), int(_res_h.min_value), int(_res_h.max_value))
+	_res_h.set_value_no_signal(new_h)
+	wall_dimensions_changed.emit(
+		Vector2(_phys_w.value, _phys_h.value),
+		Vector2i(int(_res_w.value), new_h),
 	)
 
 
