@@ -48,6 +48,10 @@ var server_ip: String = "127.0.0.1"
 var client_ip: String = "127.0.0.1"
 var use_multicast: bool = true
 
+## Max distance (m) from the wall plane the nozzle maps onto the wall. Beyond it,
+## get_ray() reports invalid so no preview/spray appears.
+var max_spray_distance: float = AppConfig.MAX_SPRAY_DISTANCE_DEFAULT
+
 ## Connection diagnostics, in increasing order of "good" so the value doubles as
 ## a severity level for UI colouring (see connection_status()).
 enum ConnectionStatus { DISCONNECTED, CONNECTED, RIGID_BODY }
@@ -170,7 +174,11 @@ func get_ray() -> Dictionary:
 	var fwd: Vector3 = (rot * forward_axis).normalized()
 	if _mapped:
 		var o := _linear * (pos - _origin_tracker) + _world_tl + position_offset
-		var d := (_linear * fwd).normalized()
+		# Map the nozzle straight onto the wall (perpendicular projection) rather
+		# than relying on can orientation — but only while it's close enough.
+		if absf(o.z) > max_spray_distance:
+			return {"valid": false}
+		var d := Vector3(0, 0, -1) if o.z >= 0.0 else Vector3(0, 0, 1)
 		return {"origin": o, "direction": d, "valid": true}
 	# Uncalibrated: raw pose so motion is visible (likely misaligned until calibrated).
 	return {"origin": pos + position_offset, "direction": fwd, "valid": true}
@@ -181,7 +189,7 @@ func get_wall_distance() -> float:
 	if not is_active() or not _mapped:
 		return INF
 	var pos: Vector3 = optitrack.get_rigid_body_pos(asset_id)
-	var o := _linear * (pos - _origin_tracker) + _world_tl
+	var o := _linear * (pos - _origin_tracker) + _world_tl + position_offset
 	return absf(o.z)
 
 

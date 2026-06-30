@@ -14,3 +14,6 @@ class_name TrackerSettings
 @export var use_multicast: bool = true
 ## Manual offset added to the tracker origin, in world units (metres).
 @export var position_offset: Vector3 = Vector3.ZERO
+## Max distance (m) the nozzle can be from the wall and still map onto it
+## (perpendicular projection). Beyond this the preview/spray is suppressed.
+@export var max_spray_distance: float = 1.0

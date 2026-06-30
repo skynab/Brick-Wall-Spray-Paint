@@ -31,11 +31,17 @@ signal aim_asset_id_changed(id: int)
 signal calibrate_requested
 ## Which three wall corners to sample (TrackerAimSource.CornerOrder index).
 signal calib_order_changed(order: int)
+## Capture the current corner during an in-progress calibration.
+signal calib_sample_requested
+## Abort an in-progress calibration.
+signal calib_stop_requested
 signal proximity_toggled(enabled: bool)
 signal proximity_threshold_changed(value: float)
 ## OptiTrack / NatNet connection settings.
 signal tracker_connect_requested(server_ip: String, client_ip: String, multicast: bool)
 signal tracker_offset_changed(offset: Vector3)
+## Max distance (m) the tracked nozzle maps onto the wall.
+signal max_spray_distance_changed(value: float)
 ## Wall auto-clear controls.
 signal clear_mode_changed(mode: int)
 signal clear_interval_changed(seconds: float)
@@ -82,7 +88,12 @@ var _client_ip_edit: LineEdit
 var _multicast_opt: OptionButton
 var _conn_status_label: Label           # live OptiTrack connection state
 var _rb_pos_label: Label                # live rigid-body position
+var _rb_dist_label: Label               # live distance to the wall plane
+var _max_dist_spin: SpinBox             # max nozzle→wall mapping distance (m)
 var _calib_order_opt: OptionButton      # which 3 corners to sample
+var _calib_start_btn: Button            # begins calibration
+var _calib_sample_btn: Button           # captures the current corner
+var _calib_row: HBoxContainer           # in-progress controls (sample + stop)
 var _offset_spins: Dictionary = {}      # "x"/"y"/"z" -> SpinBox
 var _phys_w: SpinBox
 var _phys_h: SpinBox
@@ -145,7 +156,7 @@ func set_status(text: String) -> void:
 ## Update the live OptiTrack diagnostics. `level` is the severity (0 = not
 ## connected, 1 = connected, 2 = rigid body streaming) used for colour; `text`
 ## is the label; `position` is the rigid-body Vector3, or null when unavailable.
-func set_tracker_status(level: int, text: String, position) -> void:
+func set_tracker_status(level: int, text: String, position, distance: float = INF) -> void:
 	if _conn_status_label != null:
 		_conn_status_label.text = text
 		var col := Color(1, 0.4, 0.4)        # red — not connected
@@ -159,6 +170,8 @@ func set_tracker_status(level: int, text: String, position) -> void:
 			_rb_pos_label.text = "Position: —"
 		else:
 			_rb_pos_label.text = "Position: (%.3f, %.3f, %.3f)" % [position.x, position.y, position.z]
+	if _rb_dist_label != null:
+		_rb_dist_label.text = "Distance to wall: —" if is_inf(distance) else "Distance to wall: %.3f m" % distance
 
 
 ## Update the auto-clear countdown line (driven by the app each frame).
@@ -360,8 +373,11 @@ func _build_ui() -> void:
 
 	vbox.add_child(HSeparator.new())
 
-	# Status (OptiTrack state goes here later)
+	# Status (OptiTrack state goes here later). Wrap long calibration prompts so
+	# they never widen the panel and cover the controls.
 	_status = _make_label("Tracker: —")
+	_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_status.custom_minimum_size = Vector2(0, 0)
 	vbox.add_child(_status)
 
 	var hint := _make_label("[M] hide  [Tab] nozzle  [C]/1-7 color")
@@ -556,11 +572,18 @@ func _build_optitrack_section() -> VBoxContainer:
 	# Live NatNet diagnostics (updated every frame from the tracker).
 	_conn_status_label = _make_label("Not Connected")
 	_conn_status_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+	_conn_status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	content.add_child(_conn_status_label)
 	_rb_pos_label = _make_label("Position: —")
+	_rb_pos_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_rb_pos_label.modulate = Color(1, 1, 1, 0.7)
 	_rb_pos_label.add_theme_font_size_override("font_size", 11)
 	content.add_child(_rb_pos_label)
+	_rb_dist_label = _make_label("Distance to wall: —")
+	_rb_dist_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_rb_dist_label.modulate = Color(1, 1, 1, 0.7)
+	_rb_dist_label.add_theme_font_size_override("font_size", 11)
+	content.add_child(_rb_dist_label)
 
 	content.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()
@@ -614,6 +637,21 @@ func _build_optitrack_section() -> VBoxContainer:
 		_offset_spins[axis] = s
 	content.add_child(off_row)
 
+	# How close the nozzle must be to the wall to map onto it (perpendicular).
+	var dist_row := HBoxContainer.new()
+	var dist_label := Label.new()
+	dist_label.text = "Max spray distance (m)"
+	dist_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	dist_row.add_child(dist_label)
+	_max_dist_spin = SpinBox.new()
+	_max_dist_spin.min_value = 0.05
+	_max_dist_spin.max_value = 10.0
+	_max_dist_spin.step = 0.05
+	_max_dist_spin.value = 1.0
+	_max_dist_spin.value_changed.connect(func(v): max_spray_distance_changed.emit(v))
+	dist_row.add_child(_max_dist_spin)
+	content.add_child(dist_row)
+
 	# Which three adjacent wall corners to sample during calibration.
 	content.add_child(_make_label("Calibration corners (in order)"))
 	_calib_order_opt = OptionButton.new()
@@ -622,7 +660,18 @@ func _build_optitrack_section() -> VBoxContainer:
 	_calib_order_opt.item_selected.connect(func(i): calib_order_changed.emit(i))
 	content.add_child(_calib_order_opt)
 
-	content.add_child(_make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit()))
+	_calib_start_btn = _make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit())
+	content.add_child(_calib_start_btn)
+
+	# In-progress capture controls — hidden until calibration starts.
+	_calib_row = HBoxContainer.new()
+	_calib_row.add_theme_constant_override("separation", 6)
+	_calib_sample_btn = _make_action_button("Add sample", func(): calib_sample_requested.emit())
+	var stop_btn := _make_action_button("Stop", func(): calib_stop_requested.emit())
+	_calib_row.add_child(_calib_sample_btn)
+	_calib_row.add_child(stop_btn)
+	_calib_row.visible = false
+	content.add_child(_calib_row)
 	return box
 
 
@@ -1015,7 +1064,7 @@ func _on_offset_changed(_v: float) -> void:
 
 
 ## Initialize the OptiTrack controls from persisted settings (no signals fired).
-func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool, pos_offset: Vector3) -> void:
+func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool, pos_offset: Vector3, max_dist: float = 1.0) -> void:
 	if _server_ip_edit != null:
 		_server_ip_edit.text = server_ip
 	if _client_ip_edit != null:
@@ -1026,12 +1075,25 @@ func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool,
 		_offset_spins["x"].set_value_no_signal(pos_offset.x)
 		_offset_spins["y"].set_value_no_signal(pos_offset.y)
 		_offset_spins["z"].set_value_no_signal(pos_offset.z)
+	if _max_dist_spin != null:
+		_max_dist_spin.set_value_no_signal(max_dist)
 
 
 ## Set the calibration corner-order dropdown (no signal fired).
 func set_calib_order(order: int) -> void:
 	if _calib_order_opt != null and order >= 0 and order < _calib_order_opt.item_count:
 		_calib_order_opt.select(order)
+
+
+## Reflect calibration progress in the UI: show/hide the Add-sample + Stop
+## controls and label the sample button with the current step (1-based).
+func set_calibrating(active: bool, step: int) -> void:
+	if _calib_row != null:
+		_calib_row.visible = active
+	if _calib_start_btn != null:
+		_calib_start_btn.disabled = active
+	if _calib_sample_btn != null and active:
+		_calib_sample_btn.text = "Add sample (%d/3)" % step
 
 
 func _on_prox_slider_changed(v: float) -> void:

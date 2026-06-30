@@ -61,9 +61,12 @@ func _ready() -> void:
 		_menu.aim_source_selected.connect(_set_aim)
 		_menu.calibrate_requested.connect(_start_calibration)
 		_menu.calib_order_changed.connect(_on_calib_order_changed)
+		_menu.calib_sample_requested.connect(_capture_calibration_point)
+		_menu.calib_stop_requested.connect(_cancel_calibration)
 		_menu.aim_asset_id_changed.connect(_on_asset_id_changed)
 		_menu.tracker_connect_requested.connect(_on_tracker_connect)
 		_menu.tracker_offset_changed.connect(_on_tracker_offset)
+		_menu.max_spray_distance_changed.connect(_on_max_spray_distance)
 		_menu.proximity_toggled.connect(func(on): _proximity_enabled = on)
 		_menu.proximity_threshold_changed.connect(func(v): _proximity_threshold = v)
 		_menu.clear_mode_changed.connect(_on_clear_mode_changed)
@@ -83,6 +86,7 @@ func _ready() -> void:
 				_tracker_settings.client_ip,
 				_tracker_settings.use_multicast,
 				_tracker_settings.position_offset,
+				_tracker_settings.max_spray_distance,
 			)
 		if _tracker != null:
 			_menu.set_calib_order(_tracker.calibration.corner_order)
@@ -134,6 +138,7 @@ func _build_aim_sources() -> void:
 	_tracker_settings = _load_tracker_settings()
 	_tracker.configure(_tracker_settings.server_ip, _tracker_settings.client_ip, _tracker_settings.use_multicast)
 	_tracker.position_offset = _tracker_settings.position_offset
+	_tracker.max_spray_distance = _tracker_settings.max_spray_distance
 	if _wall_config != null:
 		_tracker.set_wall_size(_wall_config.physical_size)
 	_aim_sources.append(_tracker)
@@ -177,9 +182,12 @@ func _handle_spray() -> void:
 	if _projection != null and _projection.is_calibrating():
 		return
 
-	# During wall calibration, the spray button captures wall corners instead of painting.
+	# During wall calibration, the spray button captures wall corners instead of
+	# painting. Ignore clicks on the menu so the Add-sample button doesn't also
+	# trigger a capture here (it emits calib_sample_requested itself).
 	if _calibrating:
-		if Input.is_action_just_pressed("spray"):
+		var on_menu := _menu != null and _menu.is_pointing_at_menu()
+		if Input.is_action_just_pressed("spray") and not on_menu:
 			_capture_calibration_point()
 		return
 
@@ -395,7 +403,7 @@ func _update_tracker_diagnostics() -> void:
 	if _menu == null or _tracker == null:
 		return
 	var level := int(_tracker.connection_status())
-	_menu.set_tracker_status(level, _tracker.connection_status_text(), _tracker.canister_position())
+	_menu.set_tracker_status(level, _tracker.connection_status_text(), _tracker.canister_position(), _tracker.get_wall_distance())
 
 
 # --- Tracker calibration ----------------------------------------------------
@@ -410,17 +418,19 @@ func _start_calibration() -> void:
 	_set_aim(_aim_sources.find(_tracker))
 	_calibrating = true
 	_calib_index = 0
+	if _menu != null:
+		_menu.set_calibrating(true, 1)
 	_prompt_calibration()
 
 
 func _prompt_calibration() -> void:
 	if _menu != null:
 		var names := _tracker.corner_sequence()
-		_menu.set_status("Calibrate (%d/3): touch %s, press [Space]" % [_calib_index + 1, names[_calib_index]])
+		_menu.set_status("Calibrate (%d/3): place can at %s, then Add sample" % [_calib_index + 1, names[_calib_index]])
 
 
 func _capture_calibration_point() -> void:
-	if _tracker == null:
+	if _tracker == null or not _calibrating:
 		return
 	if not _tracker.capture_corner(_calib_index):
 		_menu.set_status("Capture failed — is the rigid body streaming?")
@@ -429,11 +439,26 @@ func _capture_calibration_point() -> void:
 	if _calib_index >= 3:
 		_finish_calibration()
 	else:
+		if _menu != null:
+			_menu.set_calibrating(true, _calib_index + 1)
 		_prompt_calibration()
+
+
+## Abort calibration without applying anything (the Stop button / no samples).
+func _cancel_calibration() -> void:
+	if not _calibrating:
+		return
+	_calibrating = false
+	if _menu != null:
+		_menu.set_calibrating(false, 0)
+		_menu.set_status("Calibration cancelled")
+	_update_aim_status()
 
 
 func _finish_calibration() -> void:
 	_calibrating = false
+	if _menu != null:
+		_menu.set_calibrating(false, 0)
 	var ok := _tracker.finalize_calibration()
 	if ok:
 		# The triangle measures the wall's physical size — resize the virtual wall
@@ -476,6 +501,15 @@ func _on_tracker_connect(server_ip: String, client_ip: String, multicast: bool) 
 	_save_tracker_settings()
 	_update_aim_status()
 	print("Tracker connect: server=%s client=%s %s" % [server_ip, client_ip, "multicast" if multicast else "unicast"])
+
+
+func _on_max_spray_distance(value: float) -> void:
+	if _tracker_settings == null:
+		_tracker_settings = TrackerSettings.new()
+	_tracker_settings.max_spray_distance = value
+	if _tracker != null:
+		_tracker.max_spray_distance = value
+	_save_tracker_settings()
 
 
 func _on_tracker_offset(offset: Vector3) -> void:
