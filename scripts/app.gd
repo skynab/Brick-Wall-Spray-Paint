@@ -26,8 +26,8 @@ var _mouse: MouseAimSource
 var _tracker: TrackerAimSource
 var _tracker_settings: TrackerSettings
 
-# Calibration flow state.
-const CORNER_NAMES := ["TOP-LEFT", "TOP-RIGHT", "BOTTOM-LEFT"]
+# Calibration flow state. The corner names shown per step come from the active
+# corner-order on the tracker (see TrackerAimSource.CornerOrder).
 var _calibrating := false
 var _calib_index := 0
 
@@ -60,6 +60,7 @@ func _ready() -> void:
 		_menu.tool_changed.connect(_report_state)
 		_menu.aim_source_selected.connect(_set_aim)
 		_menu.calibrate_requested.connect(_start_calibration)
+		_menu.calib_order_changed.connect(_on_calib_order_changed)
 		_menu.aim_asset_id_changed.connect(_on_asset_id_changed)
 		_menu.tracker_connect_requested.connect(_on_tracker_connect)
 		_menu.tracker_offset_changed.connect(_on_tracker_offset)
@@ -83,6 +84,8 @@ func _ready() -> void:
 				_tracker_settings.use_multicast,
 				_tracker_settings.position_offset,
 			)
+		if _tracker != null:
+			_menu.set_calib_order(_tracker.calibration.corner_order)
 		_populate_walls()
 	_frame_camera()
 	get_viewport().size_changed.connect(_frame_camera)
@@ -412,7 +415,8 @@ func _start_calibration() -> void:
 
 func _prompt_calibration() -> void:
 	if _menu != null:
-		_menu.set_status("Calibrate (%d/3): touch %s, press [Space]" % [_calib_index + 1, CORNER_NAMES[_calib_index]])
+		var names := _tracker.corner_sequence()
+		_menu.set_status("Calibrate (%d/3): touch %s, press [Space]" % [_calib_index + 1, names[_calib_index]])
 
 
 func _capture_calibration_point() -> void:
@@ -432,10 +436,28 @@ func _finish_calibration() -> void:
 	_calibrating = false
 	var ok := _tracker.finalize_calibration()
 	if ok:
+		# The triangle measures the wall's physical size — resize the virtual wall
+		# (and reframe the camera) to match, keeping the current pixel resolution.
+		var size := _tracker.derived_wall_size()
+		if size.x > 0.01 and size.y > 0.01:
+			var res := _wall_config.resolution if _wall_config != null else Vector2i(2048, 1152)
+			_on_wall_dimensions_changed(size, res)
+			if _menu != null:
+				_menu.set_wall_dimensions(size, res)
 		_save_calibration()
 	if _menu != null:
-		_menu.set_status("Calibration %s" % ("saved" if ok else "failed (degenerate)"))
+		if ok:
+			var s := _tracker.derived_wall_size()
+			_menu.set_status("Calibration saved — wall %.2f × %.2f m" % [s.x, s.y])
+		else:
+			_menu.set_status("Calibration failed (degenerate)")
 	_update_aim_status()
+
+
+func _on_calib_order_changed(order: int) -> void:
+	if _tracker != null:
+		_tracker.set_corner_order(order)
+		_save_calibration()
 
 
 func _on_asset_id_changed(id: int) -> void:

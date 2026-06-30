@@ -29,6 +29,8 @@ signal aim_source_selected(index: int)
 ## Tracker controls.
 signal aim_asset_id_changed(id: int)
 signal calibrate_requested
+## Which three wall corners to sample (TrackerAimSource.CornerOrder index).
+signal calib_order_changed(order: int)
 signal proximity_toggled(enabled: bool)
 signal proximity_threshold_changed(value: float)
 ## OptiTrack / NatNet connection settings.
@@ -80,6 +82,7 @@ var _client_ip_edit: LineEdit
 var _multicast_opt: OptionButton
 var _conn_status_label: Label           # live OptiTrack connection state
 var _rb_pos_label: Label                # live rigid-body position
+var _calib_order_opt: OptionButton      # which 3 corners to sample
 var _offset_spins: Dictionary = {}      # "x"/"y"/"z" -> SpinBox
 var _phys_w: SpinBox
 var _phys_h: SpinBox
@@ -610,6 +613,14 @@ func _build_optitrack_section() -> VBoxContainer:
 		_offset_spins[axis] = s
 	content.add_child(off_row)
 
+	# Which three adjacent wall corners to sample during calibration.
+	content.add_child(_make_label("Calibration corners (in order)"))
+	_calib_order_opt = OptionButton.new()
+	for label in TrackerAimSource.CORNER_ORDER_LABELS:
+		_calib_order_opt.add_item(label)
+	_calib_order_opt.item_selected.connect(func(i): calib_order_changed.emit(i))
+	content.add_child(_calib_order_opt)
+
 	content.add_child(_make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit()))
 	return box
 
@@ -996,6 +1007,12 @@ func set_tracker_settings(server_ip: String, client_ip: String, multicast: bool,
 		_offset_spins["x"].set_value_no_signal(pos_offset.x)
 		_offset_spins["y"].set_value_no_signal(pos_offset.y)
 		_offset_spins["z"].set_value_no_signal(pos_offset.z)
+
+
+## Set the calibration corner-order dropdown (no signal fired).
+func set_calib_order(order: int) -> void:
+	if _calib_order_opt != null and order >= 0 and order < _calib_order_opt.item_count:
+		_calib_order_opt.select(order)
 
 
 func _on_prox_slider_changed(v: float) -> void:

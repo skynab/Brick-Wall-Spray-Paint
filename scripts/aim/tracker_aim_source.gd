@@ -1,6 +1,28 @@
 extends AimSource
 class_name TrackerAimSource
 
+## The three adjacent wall corners to sample, in capture order. Each option walks
+## the rectangle's perimeter starting from a different corner, so whichever three
+## corners are easiest to reach physically can be used. The remaining (fourth)
+## corner — and the wall's width/height — are derived from the three samples.
+enum CornerOrder { TL_BL_BR, BL_BR_TR, BR_TR_TL, TR_TL_BL }
+
+## Human-readable corner sequence per CornerOrder (used for capture prompts).
+const CORNER_SEQUENCES := [
+	["TOP-LEFT", "BOTTOM-LEFT", "BOTTOM-RIGHT"],
+	["BOTTOM-LEFT", "BOTTOM-RIGHT", "TOP-RIGHT"],
+	["BOTTOM-RIGHT", "TOP-RIGHT", "TOP-LEFT"],
+	["TOP-RIGHT", "TOP-LEFT", "BOTTOM-LEFT"],
+]
+
+## Short dropdown labels per CornerOrder.
+const CORNER_ORDER_LABELS := [
+	"TL → BL → BR",
+	"BL → BR → TR",
+	"BR → TR → TL",
+	"TR → TL → BL",
+]
+
 ## Aims the spray from a Motive rigid body (the spray canister), streamed via the
 ## OptiTrack plugin. Reads pose directly from the OptiTrack autoload singleton so
 ## the project doesn't depend on the plugin being installed — when the singleton
@@ -33,7 +55,10 @@ enum ConnectionStatus { DISCONNECTED, CONNECTED, RIGID_BODY }
 # Cached tracker-space -> virtual-wall-space linear map.
 var _linear: Basis = Basis()
 var _world_tl: Vector3 = Vector3.ZERO
+var _origin_tracker: Vector3 = Vector3.ZERO  # tracker-space top-left (mapping origin)
 var _mapped := false
+## Physical wall size (m) derived from the last finalized calibration triangle.
+var _derived_size: Vector2 = Vector2.ZERO
 
 
 func _init(optitrack_singleton: Node, calib: TrackerCalibration = null) -> void:
@@ -144,7 +169,7 @@ func get_ray() -> Dictionary:
 	var rot: Quaternion = optitrack.get_rigid_body_rot(asset_id)
 	var fwd: Vector3 = (rot * forward_axis).normalized()
 	if _mapped:
-		var o := _linear * (pos - calibration.corners[0]) + _world_tl + position_offset
+		var o := _linear * (pos - _origin_tracker) + _world_tl + position_offset
 		var d := (_linear * fwd).normalized()
 		return {"origin": o, "direction": d, "valid": true}
 	# Uncalibrated: raw pose so motion is visible (likely misaligned until calibrated).
@@ -156,13 +181,24 @@ func get_wall_distance() -> float:
 	if not is_active() or not _mapped:
 		return INF
 	var pos: Vector3 = optitrack.get_rigid_body_pos(asset_id)
-	var o := _linear * (pos - calibration.corners[0]) + _world_tl
+	var o := _linear * (pos - _origin_tracker) + _world_tl
 	return absf(o.z)
 
 
 # --- Calibration ------------------------------------------------------------
 
-## Capture the current canister position as corner `index` (0=TL, 1=TR, 2=BL).
+## The corner sequence (capture prompts) for the active CornerOrder.
+func corner_sequence() -> Array:
+	return CORNER_SEQUENCES[clampi(calibration.corner_order, 0, CORNER_SEQUENCES.size() - 1)]
+
+
+## Select which three corners (and order) the next calibration samples.
+func set_corner_order(order: int) -> void:
+	calibration.corner_order = clampi(order, 0, CORNER_SEQUENCES.size() - 1)
+
+
+## Capture the current canister position as the `index`-th corner of the active
+## sequence (0/1/2, in corner_order). Returns false if the body isn't streaming.
 func capture_corner(index: int) -> bool:
 	var p = canister_position()
 	if p == null or index < 0 or index > 2:
@@ -174,26 +210,62 @@ func capture_corner(index: int) -> bool:
 
 
 ## Mark calibration complete and rebuild the mapping. Returns true on success.
+## On success, derived_wall_size() holds the wall size measured from the triangle.
 func finalize_calibration() -> bool:
 	calibration.calibrated = true
 	recompute()
 	return _mapped
 
 
+## Wall size (m) derived from the last finalized calibration triangle, or ZERO.
+func derived_wall_size() -> Vector2:
+	return _derived_size
+
+
+## Reconstruct the wall's TOP-LEFT, TOP-RIGHT and BOTTOM-LEFT corners (tracker
+## space) from the three captured samples, accounting for capture order. The
+## wall is a rectangle, so the unsampled corner is implied by the other three.
+## Returns [TL, TR, BL].
+func _canonical_corners() -> Array:
+	var p0: Vector3 = calibration.corners[0]
+	var p1: Vector3 = calibration.corners[1]
+	var p2: Vector3 = calibration.corners[2]
+	match calibration.corner_order:
+		CornerOrder.BL_BR_TR:
+			# p0=BL, p1=BR, p2=TR  ->  TL = TR + (BL - BR)
+			return [p2 + (p0 - p1), p2, p0]
+		CornerOrder.BR_TR_TL:
+			# p0=BR, p1=TR, p2=TL  ->  BL = TL + (BR - TR)
+			return [p2, p1, p2 + (p0 - p1)]
+		CornerOrder.TR_TL_BL:
+			# p0=TR, p1=TL, p2=BL  (already canonical, reordered)
+			return [p1, p0, p2]
+		_:
+			# CornerOrder.TL_BL_BR: p0=TL, p1=BL, p2=BR  ->  TR = TL + (BR - BL)
+			return [p0, p0 + (p2 - p1), p1]
+
+
 func recompute() -> void:
 	_mapped = false
 	if calibration == null or not calibration.calibrated or calibration.corners.size() < 3:
 		return
+	var canon := _canonical_corners()
+	var tl: Vector3 = canon[0]
+	var tr: Vector3 = canon[1]
+	var bl: Vector3 = canon[2]
+	# Physical wall size measured directly from the sampled triangle.
+	_derived_size = Vector2((tr - tl).length(), (bl - tl).length())
 	var w := wall_size.x
 	var h := wall_size.y
+	_origin_tracker = tl
 	_world_tl = Vector3(-w * 0.5, h * 0.5, 0.0)
 	# Virtual wall basis spanning the face (+U right, +V down, N out-of-plane).
 	var world_u := Vector3(w, 0, 0)
 	var world_v := Vector3(0, -h, 0)
 	var world_n := world_u.cross(world_v)
-	# Tracker-space basis from the three captured corners.
-	var tracker_u: Vector3 = calibration.corners[1] - calibration.corners[0]
-	var tracker_v: Vector3 = calibration.corners[2] - calibration.corners[0]
+	# Tracker-space basis from the reconstructed corners.
+	var tracker_u: Vector3 = tr - tl
+	var tracker_v: Vector3 = bl - tl
 	var tracker_n := tracker_u.cross(tracker_v)
 	if tracker_n.length() < 0.000001:
 		push_warning("Tracker calibration is degenerate (corners collinear/coincident).")
