@@ -250,22 +250,22 @@ func recompute() -> void:
 	if calibration == null or not calibration.calibrated or calibration.corners.size() < 3:
 		return
 	var canon := _canonical_corners()
-	var tl: Vector3 = canon[0]
-	var tr: Vector3 = canon[1]
-	var bl: Vector3 = canon[2]
+	var corner_tl: Vector3 = canon[0]
+	var corner_tr: Vector3 = canon[1]
+	var corner_bl: Vector3 = canon[2]
 	# Physical wall size measured directly from the sampled triangle.
-	_derived_size = Vector2((tr - tl).length(), (bl - tl).length())
+	_derived_size = Vector2((corner_tr - corner_tl).length(), (corner_bl - corner_tl).length())
 	var w := wall_size.x
 	var h := wall_size.y
-	_origin_tracker = tl
+	_origin_tracker = corner_tl
 	_world_tl = Vector3(-w * 0.5, h * 0.5, 0.0)
 	# Virtual wall basis spanning the face (+U right, +V down, N out-of-plane).
 	var world_u := Vector3(w, 0, 0)
 	var world_v := Vector3(0, -h, 0)
 	var world_n := world_u.cross(world_v)
 	# Tracker-space basis from the reconstructed corners.
-	var tracker_u: Vector3 = tr - tl
-	var tracker_v: Vector3 = bl - tl
+	var tracker_u: Vector3 = corner_tr - corner_tl
+	var tracker_v: Vector3 = corner_bl - corner_tl
 	var tracker_n := tracker_u.cross(tracker_v)
 	if tracker_n.length() < 0.000001:
 		push_warning("Tracker calibration is degenerate (corners collinear/coincident).")

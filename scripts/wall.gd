@@ -57,13 +57,13 @@ func get_paint_layer() -> PaintLayer:
 ## Set the wall's physical size (metres) and pixel resolution at runtime. The
 ## quad is resized to the physical size; if the resolution changed, the paint
 ## buffer is reallocated (which clears it).
-func apply_dimensions(physical_size: Vector2, resolution: Vector2i) -> void:
+func apply_dimensions(size_m: Vector2, res: Vector2i) -> void:
 	var qm := _mesh.mesh as QuadMesh
-	if qm != null and physical_size.x > 0.0 and physical_size.y > 0.0:
-		qm.size = physical_size
+	if qm != null and size_m.x > 0.0 and size_m.y > 0.0:
+		qm.size = size_m
 		_quad_size = qm.size
-	if resolution.x >= 16 and resolution.y >= 16 and resolution != paint_resolution:
-		paint_resolution = resolution
+	if res.x >= 16 and res.y >= 16 and res != paint_resolution:
+		paint_resolution = res
 		if _paint != null:
 			_paint.setup(paint_resolution)
 			if _material != null:
