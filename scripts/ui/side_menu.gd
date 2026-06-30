@@ -78,6 +78,8 @@ var _aim_opt: OptionButton
 var _server_ip_edit: LineEdit
 var _client_ip_edit: LineEdit
 var _multicast_opt: OptionButton
+var _conn_status_label: Label           # live OptiTrack connection state
+var _rb_pos_label: Label                # live rigid-body position
 var _offset_spins: Dictionary = {}      # "x"/"y"/"z" -> SpinBox
 var _phys_w: SpinBox
 var _phys_h: SpinBox
@@ -131,6 +133,25 @@ func sync_from_tool() -> void:
 func set_status(text: String) -> void:
 	if _status != null:
 		_status.text = text
+
+
+## Update the live OptiTrack diagnostics. `level` is the severity (0 = not
+## connected, 1 = connected, 2 = rigid body streaming) used for colour; `text`
+## is the label; `position` is the rigid-body Vector3, or null when unavailable.
+func set_tracker_status(level: int, text: String, position) -> void:
+	if _conn_status_label != null:
+		_conn_status_label.text = text
+		var col := Color(1, 0.4, 0.4)        # red — not connected
+		if level >= 2:
+			col = Color(0.4, 1.0, 0.5)       # green — rigid body streaming
+		elif level == 1:
+			col = Color(1.0, 0.85, 0.3)      # amber — connected, no rigid body
+		_conn_status_label.add_theme_color_override("font_color", col)
+	if _rb_pos_label != null:
+		if position == null:
+			_rb_pos_label.text = "Position: —"
+		else:
+			_rb_pos_label.text = "Position: (%.3f, %.3f, %.3f)" % [position.x, position.y, position.z]
 
 
 ## Update the auto-clear countdown line (driven by the app each frame).
@@ -523,6 +544,15 @@ func _build_optitrack_section() -> VBoxContainer:
 	box.add_theme_constant_override("separation", 6)
 
 	box.add_child(_make_section_header("OptiTrack"))
+
+	# Live NatNet diagnostics (updated every frame from the tracker).
+	_conn_status_label = _make_label("Not Connected")
+	_conn_status_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
+	box.add_child(_conn_status_label)
+	_rb_pos_label = _make_label("Position: —")
+	_rb_pos_label.modulate = Color(1, 1, 1, 0.7)
+	_rb_pos_label.add_theme_font_size_override("font_size", 11)
+	box.add_child(_rb_pos_label)
 
 	box.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()

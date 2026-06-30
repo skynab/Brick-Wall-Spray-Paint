@@ -158,6 +158,7 @@ func _process(delta: float) -> void:
 	_handle_spray()
 	_update_cursor()
 	_update_clear_timer(delta)
+	_update_tracker_diagnostics()
 	# Keep the tracker's connection state visible while it's the active source.
 	if _active_aim() == _tracker:
 		_update_aim_status()
@@ -383,6 +384,15 @@ func _update_aim_status() -> void:
 	if src == _tracker:
 		text += "  |  Calib: %s" % ("ok" if _tracker.is_calibrated() else "none")
 	_menu.set_status(text)
+
+
+## Push the live NatNet connection state + rigid-body position to the menu every
+## frame, so the connection can be debugged regardless of the active aim source.
+func _update_tracker_diagnostics() -> void:
+	if _menu == null or _tracker == null:
+		return
+	var level := int(_tracker.connection_status())
+	_menu.set_tracker_status(level, _tracker.connection_status_text(), _tracker.canister_position())
 
 
 # --- Tracker calibration ----------------------------------------------------

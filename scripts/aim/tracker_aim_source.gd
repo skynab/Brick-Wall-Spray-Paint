@@ -26,6 +26,10 @@ var server_ip: String = "127.0.0.1"
 var client_ip: String = "127.0.0.1"
 var use_multicast: bool = true
 
+## Connection diagnostics, in increasing order of "good" so the value doubles as
+## a severity level for UI colouring (see connection_status()).
+enum ConnectionStatus { DISCONNECTED, CONNECTED, RIGID_BODY }
+
 # Cached tracker-space -> virtual-wall-space linear map.
 var _linear: Basis = Basis()
 var _world_tl: Vector3 = Vector3.ZERO
@@ -80,6 +84,42 @@ func _try_set(obj, prop: String, value) -> void:
 
 func is_active() -> bool:
 	return optitrack != null and optitrack.is_connected_to_motive()
+
+
+## Current NatNet connection state, for diagnostics in the UI:
+##   DISCONNECTED — no plugin installed, or not connected to Motive.
+##   CONNECTED    — connected to Motive, but the selected rigid body isn't streaming.
+##   RIGID_BODY   — connected and the selected rigid body is being tracked.
+func connection_status() -> ConnectionStatus:
+	if optitrack == null or not optitrack.is_connected_to_motive():
+		return ConnectionStatus.DISCONNECTED
+	if _rigid_body_tracked():
+		return ConnectionStatus.RIGID_BODY
+	return ConnectionStatus.CONNECTED
+
+
+## Human-readable form of connection_status().
+func connection_status_text() -> String:
+	match connection_status():
+		ConnectionStatus.RIGID_BODY:
+			return "Rigid Body Connected"
+		ConnectionStatus.CONNECTED:
+			return "Connected"
+		_:
+			return "Not Connected"
+
+
+## True when the selected rigid body is actually streaming pose data. Prefers an
+## explicit plugin query if the installed version exposes one; otherwise infers
+## from the pose, since an untracked body reports the origin.
+func _rigid_body_tracked() -> bool:
+	if optitrack == null:
+		return false
+	for m in ["is_rigid_body_tracked", "is_rigid_body_valid", "is_rigid_body_active"]:
+		if optitrack.has_method(m):
+			return bool(optitrack.call(m, asset_id))
+	var p = optitrack.get_rigid_body_pos(asset_id)
+	return p != null and p != Vector3.ZERO
 
 
 func get_label() -> String:
