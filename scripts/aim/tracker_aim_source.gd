@@ -112,19 +112,26 @@ func _try_set(obj, prop: String, value) -> void:
 
 
 func is_active() -> bool:
-	return optitrack != null and optitrack.is_connected_to_motive()
+	# Trust live pose data over the connection flag: the NatNet plugin reports
+	# is_connected_to_motive() unreliably (it flickers false mid-stream), so a
+	# streaming rigid body counts as active even when the flag says otherwise.
+	return optitrack != null and (optitrack.is_connected_to_motive() or _rigid_body_tracked())
 
 
 ## Current NatNet connection state, for diagnostics in the UI:
-##   DISCONNECTED — no plugin installed, or not connected to Motive.
+##   DISCONNECTED — no plugin installed, or no data and not connected.
 ##   CONNECTED    — connected to Motive, but the selected rigid body isn't streaming.
-##   RIGID_BODY   — connected and the selected rigid body is being tracked.
+##   RIGID_BODY   — the selected rigid body is streaming pose data.
 func connection_status() -> ConnectionStatus:
-	if optitrack == null or not optitrack.is_connected_to_motive():
+	if optitrack == null:
 		return ConnectionStatus.DISCONNECTED
+	# Actual pose data is the strongest signal — report it even if the connection
+	# flag is (unreliably) false.
 	if _rigid_body_tracked():
 		return ConnectionStatus.RIGID_BODY
-	return ConnectionStatus.CONNECTED
+	if optitrack.is_connected_to_motive():
+		return ConnectionStatus.CONNECTED
+	return ConnectionStatus.DISCONNECTED
 
 
 ## Human-readable form of connection_status().
@@ -159,9 +166,9 @@ func is_calibrated() -> bool:
 	return _mapped
 
 
-## Raw canister position in tracker space, or null if unavailable.
+## Raw canister position in tracker space, or null if no pose is streaming.
 func canister_position() -> Variant:
-	if not is_active():
+	if optitrack == null or not _rigid_body_tracked():
 		return null
 	return optitrack.get_rigid_body_pos(asset_id)
 
@@ -184,9 +191,31 @@ func get_ray() -> Dictionary:
 	return {"origin": pos + position_offset, "direction": fwd, "valid": true}
 
 
+## Wall UV the nozzle projects onto (perpendicular projection), or null when
+## uncalibrated, beyond max_spray_distance, or off the wall face. Maps the nozzle
+## straight into wall-local UV space, so it doesn't depend on the wall node's
+## scene transform or on world-ray intersection like the mouse source does.
+func get_wall_uv() -> Variant:
+	if not _mapped or optitrack == null or not _rigid_body_tracked():
+		return null
+	if wall_size.x <= 0.0 or wall_size.y <= 0.0:
+		return null
+	var pos: Vector3 = optitrack.get_rigid_body_pos(asset_id)
+	var o := _linear * (pos - _origin_tracker) + _world_tl + position_offset
+	if absf(o.z) > max_spray_distance:
+		return null
+	var u := o.x / wall_size.x + 0.5
+	var v := 0.5 - o.y / wall_size.y
+	if u < 0.0 or u > 1.0 or v < 0.0 or v > 1.0:
+		return null
+	return Vector2(u, v)
+
+
 ## Distance from the canister to the (virtual) wall plane, in world units.
+## Computable whenever the wall is calibrated and a rigid-body pose is streaming —
+## independent of the (unreliable) connection flag.
 func get_wall_distance() -> float:
-	if not is_active() or not _mapped:
+	if not _mapped or optitrack == null or not _rigid_body_tracked():
 		return INF
 	var pos: Vector3 = optitrack.get_rigid_body_pos(asset_id)
 	var o := _linear * (pos - _origin_tracker) + _world_tl + position_offset

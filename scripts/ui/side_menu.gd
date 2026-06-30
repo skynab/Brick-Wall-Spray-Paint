@@ -42,6 +42,8 @@ signal tracker_connect_requested(server_ip: String, client_ip: String, multicast
 signal tracker_offset_changed(offset: Vector3)
 ## Max distance (m) the tracked nozzle maps onto the wall.
 signal max_spray_distance_changed(value: float)
+## Revert every persisted setting to its default (confirmed by the user).
+signal reset_defaults_requested
 ## Wall auto-clear controls.
 signal clear_mode_changed(mode: int)
 signal clear_interval_changed(seconds: float)
@@ -116,6 +118,7 @@ var _collapsed: Dictionary = {}
 
 var _shown := true
 var _tween: Tween
+var _reset_dialog: ConfirmationDialog
 
 
 func _ready() -> void:
@@ -385,6 +388,17 @@ func _build_ui() -> void:
 	hint.modulate = Color(1, 1, 1, 0.5)
 	vbox.add_child(hint)
 
+	vbox.add_child(HSeparator.new())
+	vbox.add_child(_make_action_button("Reset to Defaults", _on_reset_defaults_pressed))
+
+	# Confirmation gate for the (destructive) reset.
+	_reset_dialog = ConfirmationDialog.new()
+	_reset_dialog.title = "Reset to Defaults"
+	_reset_dialog.dialog_text = "Reset all settings to defaults?\n\nThis clears the calibration, wall setup, tracker settings, view options, and the current painting."
+	_reset_dialog.ok_button_text = "Reset"
+	_reset_dialog.confirmed.connect(func(): reset_defaults_requested.emit())
+	add_child(_reset_dialog)
+
 
 ## Build the wall auto-clear block (mode + interval + countdown).
 func _build_clear_section() -> VBoxContainer:
@@ -536,6 +550,7 @@ func _build_wall_size_section() -> VBoxContainer:
 
 	content.add_child(_make_action_button("Apply size", _on_wall_apply))
 	content.add_child(_make_action_button("Match res → wall aspect", _on_match_resolution))
+	content.add_child(_make_action_button("Match desktop res", _on_match_desktop_res))
 
 	_fullscreen_check = CheckButton.new()
 	_fullscreen_check.text = "Fullscreen (this monitor)"
@@ -1002,6 +1017,11 @@ func _on_aim_selected(idx: int) -> void:
 	aim_source_selected.emit(idx)
 
 
+func _on_reset_defaults_pressed() -> void:
+	if _reset_dialog != null:
+		_reset_dialog.popup_centered()
+
+
 func _on_wall_apply() -> void:
 	if _phys_w == null:
 		return
@@ -1026,6 +1046,24 @@ func _on_match_resolution() -> void:
 	wall_dimensions_changed.emit(
 		Vector2(_phys_w.value, _phys_h.value),
 		Vector2i(int(_res_w.value), new_h),
+	)
+
+
+## Set the pixel resolution to the native size of the monitor the window is on,
+## then apply. The most reliable way to fill an LED wall in fullscreen, since it
+## doesn't depend on the calibration-derived aspect.
+func _on_match_desktop_res() -> void:
+	if _phys_w == null or _res_w == null or _res_h == null:
+		return
+	var screen := DisplayServer.window_get_current_screen()
+	var size := DisplayServer.screen_get_size(screen)
+	if size.x <= 0 or size.y <= 0:
+		return
+	_res_w.set_value_no_signal(clampi(size.x, int(_res_w.min_value), int(_res_w.max_value)))
+	_res_h.set_value_no_signal(clampi(size.y, int(_res_h.min_value), int(_res_h.max_value)))
+	wall_dimensions_changed.emit(
+		Vector2(_phys_w.value, _phys_h.value),
+		Vector2i(int(_res_w.value), int(_res_h.value)),
 	)
 
 

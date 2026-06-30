@@ -52,6 +52,11 @@ func _ready() -> void:
 		_wall.apply_dimensions(_wall_config.physical_size, _wall_config.resolution)
 		_paint = _wall.get_paint_layer()
 	_build_aim_sources()
+	# Default to the tracker when a calibration is loaded — driving the spray from
+	# the tracked can is the app's purpose, and the on-wall preview only renders
+	# for the active aim source.
+	if _tracker != null and _tracker.is_calibrated():
+		_aim_index = _aim_sources.find(_tracker)
 	if _menu != null:
 		_menu.setup(_spray)
 		_menu.clear_requested.connect(_on_menu_clear)
@@ -67,6 +72,7 @@ func _ready() -> void:
 		_menu.tracker_connect_requested.connect(_on_tracker_connect)
 		_menu.tracker_offset_changed.connect(_on_tracker_offset)
 		_menu.max_spray_distance_changed.connect(_on_max_spray_distance)
+		_menu.reset_defaults_requested.connect(_reset_to_defaults)
 		_menu.proximity_toggled.connect(func(on): _proximity_enabled = on)
 		_menu.proximity_threshold_changed.connect(func(v): _proximity_threshold = v)
 		_menu.clear_mode_changed.connect(_on_clear_mode_changed)
@@ -224,6 +230,10 @@ func _aim_uv() -> Variant:
 	var src := _active_aim()
 	if src == null:
 		return null
+	# The tracker maps the nozzle position straight onto the wall (independent of
+	# the wall's scene transform), so use that directly rather than a world ray.
+	if src is TrackerAimSource:
+		return src.get_wall_uv()
 	var ray := src.get_ray()
 	if not ray.get("valid", false):
 		return null
@@ -501,6 +511,25 @@ func _on_tracker_connect(server_ip: String, client_ip: String, multicast: bool) 
 	_save_tracker_settings()
 	_update_aim_status()
 	print("Tracker connect: server=%s client=%s %s" % [server_ip, client_ip, "multicast" if multicast else "unicast"])
+
+
+## Wipe every persisted setting and reload the scene so the whole app rebuilds at
+## its defaults. Reloading is the reliable path — each subsystem re-reads its
+## (now-absent) config and falls back to defaults, so no control is missed.
+func _reset_to_defaults() -> void:
+	for path in [
+		AppConfig.WALL_CONFIG_PATH,
+		AppConfig.TRACKER_SETTINGS_PATH,
+		AppConfig.TRACKER_CALIBRATION_PATH,
+		AppConfig.PROJECTION_CALIBRATION_PATH,
+		SideMenu.PREFS_PATH,
+	]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
+	# Window mode isn't persisted in a file; force the default (windowed) so it
+	# matches the freshly-rebuilt menu state.
+	get_window().mode = Window.MODE_WINDOWED
+	get_tree().reload_current_scene()
 
 
 func _on_max_spray_distance(value: float) -> void:
