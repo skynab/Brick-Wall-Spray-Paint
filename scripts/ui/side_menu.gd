@@ -96,6 +96,10 @@ var _advanced_nodes: Array[Control] = []
 var _advanced := false
 var _advanced_check: CheckButton
 
+## Per-section collapsed state, keyed by the (upper-cased) section title. Persisted
+## so the sidebar reopens the way the user left it.
+var _collapsed: Dictionary = {}
+
 var _shown := true
 var _tween: Tween
 
@@ -244,24 +248,24 @@ func _build_ui() -> void:
 	vbox.add_child(title_row)
 
 	# Wall background section (Simple)
-	vbox.add_child(_make_section_header("Wall"))
+	var wall_content := _add_section(vbox, "Wall")
 	_wall_opt = OptionButton.new()
 	_wall_opt.item_selected.connect(_on_wall_selected)
-	vbox.add_child(_wall_opt)
+	wall_content.add_child(_wall_opt)
 
 	# Color section (Simple)
-	vbox.add_child(_make_section_header("Color"))
+	var color_content := _add_section(vbox, "Color")
 	_color_btn = ColorPickerButton.new()
 	_color_btn.custom_minimum_size = Vector2(0, 32)
 	_color_btn.color_changed.connect(_on_color_changed)
-	vbox.add_child(_color_btn)
-	vbox.add_child(_make_palette_row())
+	color_content.add_child(_color_btn)
+	color_content.add_child(_make_palette_row())
 
-	# Nozzle section (Simple): preset + shape + radius.
-	vbox.add_child(_make_section_header("Nozzle"))
+	# Nozzle section (Simple): preset + shape + radius. (Advanced sliders live here too.)
+	var nozzle_content := _add_section(vbox, "Nozzle")
 	_nozzle_opt = OptionButton.new()
 	_nozzle_opt.item_selected.connect(_on_nozzle_selected)
-	vbox.add_child(_nozzle_opt)
+	nozzle_content.add_child(_nozzle_opt)
 
 	var shape_row := HBoxContainer.new()
 	var shape_label := Label.new()
@@ -273,7 +277,7 @@ func _build_ui() -> void:
 		_shape_opt.add_item(s)
 	_shape_opt.item_selected.connect(_on_shape_selected)
 	shape_row.add_child(_shape_opt)
-	vbox.add_child(shape_row)
+	nozzle_content.add_child(shape_row)
 
 	# Output rate (Simple): master "how fast the paint comes out" multiplier.
 	var out_box := VBoxContainer.new()
@@ -292,11 +296,11 @@ func _build_ui() -> void:
 	_output_slider.step = 0.05
 	_output_slider.value_changed.connect(_on_output_changed)
 	out_box.add_child(_output_slider)
-	vbox.add_child(out_box)
+	nozzle_content.add_child(out_box)
 
 	for spec in SLIDER_SPECS:
 		var row := _make_slider_row(spec)
-		vbox.add_child(row)
+		nozzle_content.add_child(row)
 		if bool(spec[6]):
 			_advanced_nodes.append(row)
 
@@ -305,12 +309,12 @@ func _build_ui() -> void:
 	drips_check.text = "Drips"
 	drips_check.button_pressed = true
 	drips_check.toggled.connect(func(on): drips_toggled.emit(on))
-	vbox.add_child(drips_check)
+	nozzle_content.add_child(drips_check)
 	_advanced_nodes.append(drips_check)
 
 	# Reset (Advanced): undo live slider edits.
 	var reset_btn := _make_action_button("Reset nozzle", _on_reset_pressed)
-	vbox.add_child(reset_btn)
+	nozzle_content.add_child(reset_btn)
 	_advanced_nodes.append(reset_btn)
 
 	# Auto-clear section (Advanced).
@@ -368,13 +372,13 @@ func _build_clear_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 
-	box.add_child(_make_section_header("Auto-clear"))
+	var content := _add_section(box, "Auto-clear")
 
 	var mode_opt := OptionButton.new()
 	mode_opt.add_item("Manual")   # index 0 -> ClearMode.MANUAL
 	mode_opt.add_item("Timer")    # index 1 -> ClearMode.TIMER
 	mode_opt.item_selected.connect(func(i): clear_mode_changed.emit(i))
-	box.add_child(mode_opt)
+	content.add_child(mode_opt)
 
 	var int_header := HBoxContainer.new()
 	var int_name := Label.new()
@@ -385,7 +389,7 @@ func _build_clear_section() -> VBoxContainer:
 	_clear_interval_label.text = "100s"
 	int_header.add_child(int_name)
 	int_header.add_child(_clear_interval_label)
-	box.add_child(int_header)
+	content.add_child(int_header)
 
 	var int_slider := HSlider.new()
 	int_slider.min_value = 10.0
@@ -393,11 +397,11 @@ func _build_clear_section() -> VBoxContainer:
 	int_slider.step = 5.0
 	int_slider.value = 100.0
 	int_slider.value_changed.connect(_on_clear_interval_changed)
-	box.add_child(int_slider)
+	content.add_child(int_slider)
 
 	_clear_status = _make_label("")
 	_clear_status.modulate = Color(1, 1, 1, 0.6)
-	box.add_child(_clear_status)
+	content.add_child(_clear_status)
 
 	return box
 
@@ -415,7 +419,7 @@ const VIGNETTE_SPECS := [
 func _build_vignette_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(_make_section_header("Vignette"))
+	var content := _add_section(box, "Vignette")
 
 	for spec in VIGNETTE_SPECS:
 		var key: String = spec[0]
@@ -428,7 +432,7 @@ func _build_vignette_section() -> VBoxContainer:
 		value_label.text = "%.2f" % float(spec[5])
 		header.add_child(name_label)
 		header.add_child(value_label)
-		box.add_child(header)
+		content.add_child(header)
 
 		var slider := HSlider.new()
 		slider.min_value = spec[2]
@@ -436,7 +440,7 @@ func _build_vignette_section() -> VBoxContainer:
 		slider.step = spec[4]
 		slider.value = spec[5]
 		slider.value_changed.connect(_on_vignette_changed)
-		box.add_child(slider)
+		content.add_child(slider)
 
 		_vig_sliders[key] = slider
 		_vig_labels[key] = value_label
@@ -456,7 +460,7 @@ const MOUSE_AIM_SPECS := [
 func _build_mouse_aim_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(_make_section_header("Mouse aim (3D)"))
+	var content := _add_section(box, "Mouse aim (3D)")
 
 	for spec in MOUSE_AIM_SPECS:
 		var key: String = spec[0]
@@ -468,7 +472,7 @@ func _build_mouse_aim_section() -> VBoxContainer:
 		value_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
 		header.add_child(name_label)
 		header.add_child(value_label)
-		box.add_child(header)
+		content.add_child(header)
 
 		var slider := HSlider.new()
 		slider.min_value = spec[2]
@@ -476,13 +480,13 @@ func _build_mouse_aim_section() -> VBoxContainer:
 		slider.step = spec[4]
 		slider.value = spec[5]
 		slider.value_changed.connect(_on_mouse_aim_changed)
-		box.add_child(slider)
+		content.add_child(slider)
 
 		_mouse_sliders[key] = slider
 		_mouse_labels[key] = value_label
 		_update_mouse_label(key)
 
-	box.add_child(_make_action_button("Reset placement", _on_mouse_aim_reset))
+	content.add_child(_make_action_button("Reset placement", _on_mouse_aim_reset))
 	return box
 
 
@@ -491,38 +495,38 @@ func _build_mouse_aim_section() -> VBoxContainer:
 func _build_wall_size_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(_make_section_header("Wall size"))
+	var content := _add_section(box, "Wall size")
 
-	box.add_child(_make_label("Physical (m)"))
+	content.add_child(_make_label("Physical (m)"))
 	var phys_row := HBoxContainer.new()
 	phys_row.add_theme_constant_override("separation", 4)
 	_phys_w = _make_dim_spin(0.1, 1000.0, 0.01, 7.1111, "W ")
 	_phys_h = _make_dim_spin(0.1, 1000.0, 0.01, 4.0, "H ")
 	phys_row.add_child(_phys_w)
 	phys_row.add_child(_phys_h)
-	box.add_child(phys_row)
+	content.add_child(phys_row)
 
-	box.add_child(_make_label("Resolution (px)"))
+	content.add_child(_make_label("Resolution (px)"))
 	var res_row := HBoxContainer.new()
 	res_row.add_theme_constant_override("separation", 4)
 	_res_w = _make_dim_spin(16, 16384, 1, 2048, "W ")
 	_res_h = _make_dim_spin(16, 16384, 1, 1152, "H ")
 	res_row.add_child(_res_w)
 	res_row.add_child(_res_h)
-	box.add_child(res_row)
+	content.add_child(res_row)
 
-	box.add_child(_make_action_button("Apply size", _on_wall_apply))
+	content.add_child(_make_action_button("Apply size", _on_wall_apply))
 
 	_fullscreen_check = CheckButton.new()
 	_fullscreen_check.text = "Fullscreen (this monitor)"
 	_fullscreen_check.toggled.connect(func(on): fullscreen_toggled.emit(on))
-	box.add_child(_fullscreen_check)
+	content.add_child(_fullscreen_check)
 
 	var note := _make_label("Match physical & pixel aspect. Changing resolution clears paint.")
 	note.add_theme_font_size_override("font_size", 11)
 	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	note.modulate = Color(1, 1, 1, 0.5)
-	box.add_child(note)
+	content.add_child(note)
 	return box
 
 
@@ -543,24 +547,24 @@ func _build_optitrack_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
 
-	box.add_child(_make_section_header("OptiTrack"))
+	var content := _add_section(box, "OptiTrack")
 
 	# Live NatNet diagnostics (updated every frame from the tracker).
 	_conn_status_label = _make_label("Not Connected")
 	_conn_status_label.add_theme_color_override("font_color", Color(1, 0.4, 0.4))
-	box.add_child(_conn_status_label)
+	content.add_child(_conn_status_label)
 	_rb_pos_label = _make_label("Position: —")
 	_rb_pos_label.modulate = Color(1, 1, 1, 0.7)
 	_rb_pos_label.add_theme_font_size_override("font_size", 11)
-	box.add_child(_rb_pos_label)
+	content.add_child(_rb_pos_label)
 
-	box.add_child(_make_label("Aim source"))
+	content.add_child(_make_label("Aim source"))
 	_aim_opt = OptionButton.new()
 	_aim_opt.item_selected.connect(_on_aim_selected)
-	box.add_child(_aim_opt)
+	content.add_child(_aim_opt)
 
-	_server_ip_edit = _make_ip_row(box, "Server IP", "127.0.0.1")
-	_client_ip_edit = _make_ip_row(box, "Client IP", "127.0.0.1")
+	_server_ip_edit = _make_ip_row(content, "Server IP", "127.0.0.1")
+	_client_ip_edit = _make_ip_row(content, "Client IP", "127.0.0.1")
 
 	var conn_row := HBoxContainer.new()
 	var conn_label := Label.new()
@@ -571,7 +575,7 @@ func _build_optitrack_section() -> VBoxContainer:
 	_multicast_opt.add_item("Multicast")  # index 0 -> multicast
 	_multicast_opt.add_item("Unicast")    # index 1 -> unicast
 	conn_row.add_child(_multicast_opt)
-	box.add_child(conn_row)
+	content.add_child(conn_row)
 
 	var id_row := HBoxContainer.new()
 	var id_label := Label.new()
@@ -585,12 +589,12 @@ func _build_optitrack_section() -> VBoxContainer:
 	spin.value = 1
 	spin.value_changed.connect(func(v): aim_asset_id_changed.emit(int(v)))
 	id_row.add_child(spin)
-	box.add_child(id_row)
+	content.add_child(id_row)
 
-	box.add_child(_make_action_button("Connect", _on_connect_pressed))
+	content.add_child(_make_action_button("Connect", _on_connect_pressed))
 
 	# Manual origin offset (X / Y / Z) for the tracker data.
-	box.add_child(_make_label("Origin offset (m)"))
+	content.add_child(_make_label("Origin offset (m)"))
 	var off_row := HBoxContainer.new()
 	off_row.add_theme_constant_override("separation", 4)
 	for axis in ["x", "y", "z"]:
@@ -604,9 +608,9 @@ func _build_optitrack_section() -> VBoxContainer:
 		s.value_changed.connect(_on_offset_changed)
 		off_row.add_child(s)
 		_offset_spins[axis] = s
-	box.add_child(off_row)
+	content.add_child(off_row)
 
-	box.add_child(_make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit()))
+	content.add_child(_make_action_button("Calibrate wall (3 corners)", func(): calibrate_requested.emit()))
 	return box
 
 
@@ -630,12 +634,12 @@ func _make_ip_row(parent: VBoxContainer, label_text: String, default_ip: String)
 func _build_proximity_section() -> VBoxContainer:
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
-	box.add_child(_make_section_header("Proximity"))
+	var content := _add_section(box, "Proximity")
 
 	var prox_check := CheckBox.new()
 	prox_check.text = "Auto-spray near wall"
 	prox_check.toggled.connect(func(on): proximity_toggled.emit(on))
-	box.add_child(prox_check)
+	content.add_child(prox_check)
 
 	var prox_header := HBoxContainer.new()
 	var prox_name := Label.new()
@@ -646,14 +650,14 @@ func _build_proximity_section() -> VBoxContainer:
 	_prox_value.text = "%.3f" % 0.05
 	prox_header.add_child(prox_name)
 	prox_header.add_child(_prox_value)
-	box.add_child(prox_header)
+	content.add_child(prox_header)
 	var prox_slider := HSlider.new()
 	prox_slider.min_value = 0.01
 	prox_slider.max_value = 0.5
 	prox_slider.step = 0.005
 	prox_slider.value = 0.05
 	prox_slider.value_changed.connect(_on_prox_slider_changed)
-	box.add_child(prox_slider)
+	content.add_child(prox_slider)
 
 	return box
 
@@ -671,9 +675,50 @@ func _make_label(text: String) -> Label:
 	return l
 
 
-## A distinct, banded section header so groups are easy to tell apart.
-func _make_section_header(text: String) -> PanelContainer:
-	var panel := PanelContainer.new()
+## Add a collapsible section to `parent`: a clickable banded header plus a content
+## container whose visibility the header toggles. Returns the content container —
+## callers add the section's controls to it. Collapse state is restored from prefs.
+func _add_section(parent: Control, title: String) -> VBoxContainer:
+	var header := _make_section_header(title)
+	parent.add_child(header)
+	var content := VBoxContainer.new()
+	content.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	content.add_theme_constant_override("separation", 6)
+	parent.add_child(content)
+	var expanded := not bool(_collapsed.get(String(header.get_meta("title")), false))
+	content.visible = expanded
+	_update_section_header(header, expanded)
+	header.pressed.connect(_toggle_section.bind(header, content))
+	return content
+
+
+## Flip a section between expanded/collapsed and remember it.
+func _toggle_section(header: Button, content: Control) -> void:
+	var expanded := not content.visible
+	content.visible = expanded
+	_update_section_header(header, expanded)
+	_collapsed[String(header.get_meta("title"))] = not expanded
+	_save_prefs()
+
+
+## Refresh a header's disclosure arrow for the given expanded state.
+func _update_section_header(header: Button, expanded: bool) -> void:
+	header.text = ("▾  " if expanded else "▸  ") + String(header.get_meta("title"))
+
+
+## A distinct, banded section header (as a button) so groups are easy to tell
+## apart and can be clicked to collapse. The disclosure arrow is set by
+## _update_section_header; the bare title is stashed in metadata.
+func _make_section_header(text: String) -> Button:
+	var b := Button.new()
+	b.focus_mode = Control.FOCUS_NONE
+	b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	b.set_meta("title", text.to_upper())
+	b.text = text.to_upper()
+	b.add_theme_font_size_override("font_size", 13)
+	b.add_theme_color_override("font_color", Color(0.92, 0.97, 1.0))
+	b.add_theme_color_override("font_hover_color", Color(1, 1, 1))
+	b.add_theme_color_override("font_pressed_color", Color(1, 1, 1))
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(0.20, 0.42, 0.62, 0.55)
 	sb.set_corner_radius_all(4)
@@ -682,13 +727,13 @@ func _make_section_header(text: String) -> PanelContainer:
 	# A bright accent bar down the left edge.
 	sb.border_color = Color(0.45, 0.75, 1.0)
 	sb.border_width_left = 3
-	panel.add_theme_stylebox_override("panel", sb)
-	var l := Label.new()
-	l.text = text.to_upper()
-	l.add_theme_font_size_override("font_size", 13)
-	l.add_theme_color_override("font_color", Color(0.92, 0.97, 1.0))
-	panel.add_child(l)
-	return panel
+	var sb_hover := sb.duplicate() as StyleBoxFlat
+	sb_hover.bg_color = Color(0.26, 0.50, 0.72, 0.7)
+	b.add_theme_stylebox_override("normal", sb)
+	b.add_theme_stylebox_override("hover", sb_hover)
+	b.add_theme_stylebox_override("pressed", sb_hover)
+	b.add_theme_stylebox_override("focus", sb)
+	return b
 
 
 func _make_palette_row() -> HBoxContainer:
@@ -982,12 +1027,16 @@ func _load_prefs() -> void:
 	var cfg := ConfigFile.new()
 	if cfg.load(PREFS_PATH) == OK:
 		_advanced = bool(cfg.get_value("menu", "advanced", false))
+		var c = cfg.get_value("menu", "collapsed", {})
+		if c is Dictionary:
+			_collapsed = c
 
 
 func _save_prefs() -> void:
 	var cfg := ConfigFile.new()
 	cfg.load(PREFS_PATH)  # keep any other keys
 	cfg.set_value("menu", "advanced", _advanced)
+	cfg.set_value("menu", "collapsed", _collapsed)
 	cfg.save(PREFS_PATH)
 
 
